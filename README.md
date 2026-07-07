@@ -1,45 +1,31 @@
+<p align="center">
+  <a href="https://crecoard.com">
+    <img src="docs/Crecoard_Banner.png.png" alt="Crecoard" width="100%">
+  </a>
+</p>
 # Crecoard
 
 **A collaborative visual workspace — an infinite board canvas where you build your workflow out of drag-and-drop blocks, custom widgets, and shared spaces.**
 
-Crecoard blends a freeform board (think Notion-meets-a-whiteboard) with real-time collaboration, a Discord-style server model, a sandboxed widget platform, and a community marketplace for sharing what you build. It ships as both a web app and a native desktop app.
 
 > **Live:** [crecoard.com](https://crecoard.com)
 
 <!-- Add 2–3 screenshots or a short GIF here — this is the first thing a reviewer looks at. -->
 <!-- ![Board canvas](docs/screenshot-board.png) -->
 
----
+## Download
 
-## Highlights
+Crecoard runs in any browser at **[crecoard.com](https://crecoard.com)** — nothing to install.
 
-**Board canvas**
-- Infinite, pannable/zoomable canvas with drag-and-drop blocks and rich item types — tasks, kanban, calendars, notes, media/playlists, images, and audio visualizers.
-- Custom backgrounds, live wallpapers, and per-board themes.
-- Touch-first: pinch-zoom, two-finger pan, and a responsive mobile layout.
+Prefer a native app? The **desktop app** (Windows) adds a system tray, a global quick-capture hotkey, and auto-updates in the background:
 
-**Real-time collaboration & servers**
-- Discord-style server sidebar with shared "server boards."
-- Roles and permissions, plus in-canvas chat with @mentions, reactions, replies, pins, and moderation.
-
-**Widget / plugin platform**
-- Sandboxed custom widgets governed by a capability-based **permission model** with an install-time consent gate.
-- Installable community items and a bots REST API for programmatic board access.
-
-**Community marketplace**
-- Publish whole boards, single blocks, or individual items.
-- Browse by category with search, star ratings, likes, download counts, a featured spotlight, and cover + screenshot galleries.
-
-**Desktop app (Electron)**
-- System tray, close-to-tray, launch-on-startup, a global quick-capture hotkey, and auto-update.
-
-**Reminders & scheduling**
-- Email + web-push notifications and a one-way ICS calendar feed.
-
-**Onboarding**
-- First-run guided tour and a curated starter palette to avoid blank-canvas overwhelm.
+**[⬇ Download the latest release »](https://github.com/ramButTan-hw/Crecoard-releases/releases/latest)**
 
 ---
+
+## Roadmap
+
+
 
 ## Tech stack
 
@@ -87,10 +73,6 @@ npm run dev        # starts the web app via Turborepo
 Other scripts: `npm run build`, `npm run lint`, `npm run type-check`.
 
 ---
-
-## About this repository
-
-This is a **curated public snapshot** of Crecoard, a project I design, build, and run at [crecoard.com](https://crecoard.com). The full development history and deployment/infrastructure configuration are kept private; this repo is published as a clean snapshot for portfolio and code review.
 
 ## License
 
