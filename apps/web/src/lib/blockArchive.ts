@@ -2,6 +2,8 @@
 
 import { supabase } from "@/lib/supabase";
 import { useBoardStore, BlockItem } from "@/store/boardStore";
+import { uploadDataUrl } from "@/lib/storage";
+import { downscaleToJpeg } from "@/lib/boardImage";
 
 // ─── Block archive ────────────────────────────────────────────────────────────
 // Snapshots of a block's contents, written either automatically by recurring
@@ -21,6 +23,8 @@ export interface BlockArchiveEntry {
   kind: "auto" | "manual";
   pinned: boolean;
   items: BlockItem[];
+  /** Real capture of the block at save time — Storage URL, or a compact JPEG data URL for guests */
+  imageUrl?: string;
   createdAt: number;
 }
 
@@ -95,7 +99,7 @@ interface ArchiveRow {
   period_end: string | null;
   kind: "auto" | "manual";
   pinned: boolean;
-  data: { items: BlockItem[] };
+  data: { items: BlockItem[]; imageUrl?: string };
   created_at: string;
 }
 
@@ -110,6 +114,7 @@ function rowToEntry(r: ArchiveRow): BlockArchiveEntry {
     kind: r.kind,
     pinned: r.pinned,
     items: r.data?.items ?? [],
+    imageUrl: r.data?.imageUrl,
     createdAt: new Date(r.created_at).getTime(),
   };
 }
@@ -132,7 +137,7 @@ async function saveRemote(entry: BlockArchiveEntry, userId: string): Promise<Sav
     period_end: entry.periodEnd ? new Date(entry.periodEnd).toISOString() : null,
     kind: entry.kind,
     pinned: entry.pinned,
-    data: { items: entry.items },
+    data: { items: entry.items, ...(entry.imageUrl ? { imageUrl: entry.imageUrl } : {}) },
   });
   if (error) {
     // 23505 = unique violation: another client already archived this boundary
@@ -158,10 +163,27 @@ async function saveRemote(entry: BlockArchiveEntry, userId: string): Promise<Sav
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function saveBlockArchive(
-  entry: Omit<BlockArchiveEntry, "id" | "createdAt">
+  entry: Omit<BlockArchiveEntry, "id" | "createdAt" | "imageUrl">,
+  /** Raw capture from captureBoxImage — uploaded to Storage (signed-in) or embedded as a compact thumb (guests) */
+  imageDataUrl?: string
 ): Promise<SaveArchiveResult> {
   const full: BlockArchiveEntry = { ...entry, id: crypto.randomUUID(), createdAt: Date.now() };
   const uid = signedInUserId();
+
+  if (imageDataUrl) {
+    try {
+      if (uid) {
+        // Full-quality PNG in Storage; if the upload fails, degrade to an
+        // embedded thumb rather than losing the picture.
+        const url = await uploadDataUrl(imageDataUrl, uid, "archives", "block-snapshot.png");
+        full.imageUrl = url ?? (await downscaleToJpeg(imageDataUrl));
+      } else {
+        // localStorage quota is precious — embed a small JPEG only
+        full.imageUrl = await downscaleToJpeg(imageDataUrl);
+      }
+    } catch { /* picture is best-effort */ }
+  }
+
   if (uid) {
     const res = await saveRemote(full, uid);
     // Never drop a snapshot: quota refusals stay refused, but transient/RLS

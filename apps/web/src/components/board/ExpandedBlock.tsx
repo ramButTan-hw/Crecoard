@@ -12,7 +12,8 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   X, Pin, Grid3X3, Upload, AlignLeft, AlignCenter, AlignRight, Trash2,
   CopyPlus, ArrowUp, ArrowDown, RefreshCw, LayoutGrid, Minus, Plus,
-  Lock, LockOpen, Eye, EyeOff, ShieldCheck, SlidersHorizontal,
+  Lock, LockOpen, Eye, EyeOff, ShieldCheck, SlidersHorizontal, Archive,
+  Loader2, Check,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
@@ -28,6 +29,8 @@ import { FlashcardStylePanel, QuizStylePanel } from "@/components/items/StudyIte
 import { VisualizerStylePanel } from "@/components/items/VisualizerItem";
 import { TwitchStylePanel } from "@/components/items/TwitchItem";
 import { FontPicker } from "@/components/ui/FontPicker";
+import { saveBlockArchive } from "@/lib/blockArchive";
+import { captureBoxImage } from "@/lib/boardImage";
 import { loadGoogleFont } from "@/lib/fonts";
 import { ITEM_DEFINITIONS } from "./ItemPalette";
 import { WallpaperEditor } from "@/components/ui/WallpaperEditor";
@@ -40,7 +43,7 @@ const snap = (v: number) => Math.round(v / GRID) * GRID;
 const MIN_W = 180;
 const MIN_H = 60;
 
-const DEFAULT_SIZES: Record<ItemType, { w: number; h: number }> = {
+export const DEFAULT_SIZES: Record<ItemType, { w: number; h: number }> = {
   text:     { w: 320, h: 100 },
   list:     { w: 300, h: 200 },
   embed:    { w: 420, h: 260 },
@@ -66,7 +69,7 @@ const DEFAULT_SIZES: Record<ItemType, { w: number; h: number }> = {
   visualizer:   { w: 420, h: 300 },
 };
 
-function getDefaultLayout(item: BlockItem, idx: number) {
+export function getDefaultLayout(item: BlockItem, idx: number) {
   const sz = DEFAULT_SIZES[item.type] ?? { w: 280, h: 120 };
   const col = idx % 2;
   const row = Math.floor(idx / 2);
@@ -379,6 +382,8 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
   const isMobile = useIsMobile();
   // Mobile: the editor panel is a bottom sheet instead of a side column.
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  // Header archive button: idle → saving (capture runs) → saved (visible confirmation)
+  const [archiveState, setArchiveState] = useState<"idle" | "saving" | "saved">("idle");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [canvasCtxMenu, setCanvasCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -634,6 +639,48 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
             >
               <Grid3X3 size={15} />
             </button>
+            {canEdit && !box.templateEditStash && (
+              <button
+                disabled={archiveState === "saving"}
+                onClick={() => {
+                  if (archiveState !== "idle") return;
+                  setArchiveState("saving");
+                  void (async () => {
+                    // Capture this expanded view — the highest-fidelity archive picture
+                    const img = (await captureBoxImage(boardId, boxId)) ?? undefined;
+                    const res = await saveBlockArchive({
+                      boardId, boxId, title: box.title,
+                      periodStart: null, periodEnd: null,
+                      kind: "manual", pinned: true, items: box.items,
+                    }, img);
+                    if (!res.ok) {
+                      setArchiveState("idle");
+                      if (res.reason === "limit")
+                        window.alert("Archive limit reached for this block — delete or export old snapshots first.");
+                      return;
+                    }
+                    setArchiveState("saved");
+                    setTimeout(() => setArchiveState("idle"), 1800);
+                  })();
+                }}
+                className={cn(
+                  "hidden items-center gap-1.5 rounded p-1.5 transition-colors sm:flex",
+                  archiveState === "saved"
+                    ? "text-[var(--accent)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                )}
+                title="Save a snapshot (contents + picture) to the block archive"
+              >
+                {archiveState === "saving" ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : archiveState === "saved" ? (
+                  <Check size={15} />
+                ) : (
+                  <Archive size={15} />
+                )}
+                {archiveState === "saved" && <span className="text-[11px] font-semibold">Saved</span>}
+              </button>
+            )}
             {canEdit && (
               <button onClick={() => setMobilePanelOpen(true)} title="Editor" className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-overlay)] hover:text-[var(--text-primary)] transition-colors md:hidden">
                 <SlidersHorizontal size={17} />
@@ -680,6 +727,7 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
               <DndContext id="dnd-expanded-block" sensors={sensors} onDragEnd={handleDragEnd}>
                 <div
                   ref={canvasRef}
+                  data-expanded-canvas
                   className={cn("absolute", showGrid && "board-grid")}
                   style={{
                     left: 0,

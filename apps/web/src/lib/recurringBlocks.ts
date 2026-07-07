@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { useBoardStore, BlockItem, BoxRecurrence } from "@/store/boardStore";
 import type { BoardOp } from "./collaboration";
 import { saveBlockArchive } from "./blockArchive";
+import { captureBoxImage } from "./boardImage";
 
 export type RecurrenceFreq = BoxRecurrence["freq"];
 
@@ -42,10 +43,10 @@ export function instantiateTemplate(templateItems: BlockItem[]): BlockItem[] {
  * boundary. Safe to call repeatedly — blocks whose boundary hasn't passed are
  * untouched, and the archive write is idempotent per (box, boundary).
  */
-export function runDueRecurringResets(
+export async function runDueRecurringResets(
   boardId: string,
   broadcastOp?: (op: Omit<BoardOp, "senderId">) => void
-): void {
+): Promise<void> {
   const st = useBoardStore.getState();
   const board = st.boards.find((b) => b.id === boardId) ?? st.serverBoards[boardId];
   if (!board || board.isFinished) return;
@@ -66,6 +67,11 @@ export function runDueRecurringResets(
     if (!rec || box.templateEditStash || now < rec.nextResetAt) continue;
 
     if (rec.autoArchive && box.items.length > 0) {
+      // Capture BEFORE the reset swaps the items out of the DOM. Best-effort:
+      // the collapsed block is what's mounted at board open, so the picture is
+      // "how it looked on the board" — the full expanded capture comes from
+      // manual saves made while the block is open.
+      const imageDataUrl = (await captureBoxImage(boardId, box.id)) ?? undefined;
       void saveBlockArchive({
         boardId,
         boxId: box.id,
@@ -75,7 +81,7 @@ export function runDueRecurringResets(
         kind: "auto",
         pinned: false,
         items: box.items,
-      });
+      }, imageDataUrl);
     }
 
     const freshItems = instantiateTemplate(rec.templateItems);

@@ -8,7 +8,7 @@ import {
   BlockArchiveEntry, listBlockArchives, deleteBlockArchive,
   setBlockArchivePinned, downloadArchivesJson, MAX_AUTO_PER_BOX,
 } from "@/lib/blockArchive";
-import { periodLabel, downloadArchivesText, downloadArchivePng } from "@/lib/archiveExport";
+import { periodLabel, downloadArchivesText, downloadArchivePng, downloadArchiveCapture } from "@/lib/archiveExport";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -67,6 +67,15 @@ export function BlockArchiveModal({ boardId, box, onRestore, onClose }: Props) {
             <div className="space-y-1">
               {entries.map((e) => (
                 <div key={e.id} className="group flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-[var(--surface-overlay)] transition-colors">
+                  {e.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={e.imageUrl}
+                      alt=""
+                      className="h-10 w-14 shrink-0 rounded border border-[var(--border)] object-cover"
+                      loading="lazy"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[12px] font-medium text-[var(--text-primary)]">{periodLabel(e)}</p>
                     <p className="text-[11px] text-[var(--text-muted)]">
@@ -139,7 +148,13 @@ export function BlockArchiveModal({ boardId, box, onRestore, onClose }: Props) {
           const base = single ? `${box.title || "block"}-${periodLabel(single)}` : `${box.title || "block"}-archive`;
           const options: { icon: React.ReactNode; label: string; hint: string; run: () => void }[] = [
             { icon: <FileText size={13} />, label: "Text file", hint: ".txt — opens anywhere", run: () => downloadArchivesText(targets, base) },
-            ...(single ? [{ icon: <ImageIcon size={13} />, label: "Image", hint: ".png — easy to share", run: () => void downloadArchivePng(single, box.style) }] : []),
+            // Real capture when the snapshot has one; drawn journal card otherwise
+            ...(single ? [{
+              icon: <ImageIcon size={13} />,
+              label: "Image",
+              hint: single.imageUrl ? ".png — as captured" : ".png — journal card",
+              run: () => void (single.imageUrl ? downloadArchiveCapture(single, base) : downloadArchivePng(single, box.style)),
+            }] : []),
             { icon: <Braces size={13} />, label: "Data", hint: ".json — full backup", run: () => downloadArchivesJson(targets, base) },
           ];
           return (

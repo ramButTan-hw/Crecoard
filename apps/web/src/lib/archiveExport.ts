@@ -28,6 +28,21 @@ function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+/** Download an entry's real capture (Storage URL or embedded data URL). */
+export async function downloadArchiveCapture(entry: BlockArchiveEntry, filename: string): Promise<void> {
+  if (!entry.imageUrl) return;
+  const name = sanitizeFilename(filename.endsWith(".png") || filename.endsWith(".jpg") ? filename : `${filename}.png`);
+  if (entry.imageUrl.startsWith("data:")) {
+    const a = document.createElement("a");
+    a.href = entry.imageUrl;
+    a.download = name;
+    a.click();
+    return;
+  }
+  const blob = await fetch(entry.imageUrl).then((r) => r.blob());
+  downloadBlob(blob, name);
+}
+
 // ─── Items → readable text ────────────────────────────────────────────────────
 
 function itemToText(item: BlockItem): string {

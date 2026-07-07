@@ -30,9 +30,12 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
+        {/* crossOrigin makes the stylesheet's cssRules readable, which board image
+            export (html-to-image) needs to embed Inter into the exported PNG */}
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
           rel="stylesheet"
+          crossOrigin="anonymous"
         />
       </head>
       <body suppressHydrationWarning>

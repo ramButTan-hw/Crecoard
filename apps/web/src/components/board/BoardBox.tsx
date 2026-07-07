@@ -14,6 +14,7 @@ import { BoxPermissionModal } from "./PermissionModal";
 import { RecurrenceModal } from "./RecurrenceModal";
 import { BlockArchiveModal } from "./BlockArchiveModal";
 import { saveBlockArchive } from "@/lib/blockArchive";
+import { captureBoxImage } from "@/lib/boardImage";
 import { instantiateTemplate } from "@/lib/recurringBlocks";
 import { useCollab } from "@/lib/useCollabSession";
 import { ItemRenderer } from "@/components/items/ItemRenderer";
@@ -408,27 +409,35 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
   };
 
   const archiveNow = () => {
-    void saveBlockArchive({
-      boardId, boxId: box.id, title: box.title,
-      periodStart: null, periodEnd: null,
-      kind: "manual", pinned: true, items: box.items,
-    }).then((res) => {
+    void (async () => {
+      // Picture first, while the outgoing contents are still on screen
+      const imageDataUrl = (await captureBoxImage(boardId, box.id)) ?? undefined;
+      const res = await saveBlockArchive({
+        boardId, boxId: box.id, title: box.title,
+        periodStart: null, periodEnd: null,
+        kind: "manual", pinned: true, items: box.items,
+      }, imageDataUrl);
       if (!res.ok && res.reason === "limit")
         window.alert("Archive limit reached for this block — delete or export old snapshots first.");
-    });
+    })();
   };
 
   const restoreFromArchive = (items: BlockItem[]) => {
-    // Never destructive: the outgoing contents are archived before being replaced
-    if (box.items.length > 0)
-      void saveBlockArchive({
-        boardId, boxId: box.id, title: box.title,
-        periodStart: null, periodEnd: null,
-        kind: "manual", pinned: false, items: box.items,
-      });
-    const fresh = instantiateTemplate(items);
-    replaceBoxItems(boardId, box.id, fresh);
-    broadcastOp({ op: "replaceBoxItems", boardId, boxId: box.id, items: fresh });
+    void (async () => {
+      // Never destructive: the outgoing contents are archived (with a capture)
+      // before being replaced
+      if (box.items.length > 0) {
+        const imageDataUrl = (await captureBoxImage(boardId, box.id)) ?? undefined;
+        await saveBlockArchive({
+          boardId, boxId: box.id, title: box.title,
+          periodStart: null, periodEnd: null,
+          kind: "manual", pinned: false, items: box.items,
+        }, imageDataUrl);
+      }
+      const fresh = instantiateTemplate(items);
+      replaceBoxItems(boardId, box.id, fresh);
+      broadcastOp({ op: "replaceBoxItems", boardId, boxId: box.id, items: fresh });
+    })();
   };
 
   // ─── Derived styles ──────────────────────────────────────────────────────────
