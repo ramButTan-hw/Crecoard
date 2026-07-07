@@ -230,13 +230,137 @@ export async function setBlockArchivePinned(id: string, pinned: boolean): Promis
   if (signedInUserId()) await supabase.from("block_archives").update({ pinned }).eq("id", id);
 }
 
-/** Download entries as a JSON file — the user's own offline copy. */
+/** Download entries as a JSON file — the user's own offline copy, re-importable via importBlockArchives. */
 export function downloadArchivesJson(entries: BlockArchiveEntry[], filename: string): void {
-  const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+  // Versioned envelope so the entry shape can evolve; import accepts this and the
+  // legacy bare-array format from files exported before versioning existed.
+  const payload = { crecoardArchive: 1, exportedAt: new Date().toISOString(), entries };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename.endsWith(".json") ? filename : `${filename}.json`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ─── Import ───────────────────────────────────────────────────────────────────
+// The inverse of the JSON export: entries are validated field-by-field (this is
+// user-supplied JSON that ends up rendered by ItemRenderer), remapped onto the
+// block being imported into (the original may be long gone — that's the point
+// of a backup), deduped by id and auto-boundary, and pinned so pruning never
+// eats restored history.
+
+export interface ImportArchivesResult {
+  ok: boolean;
+  imported: number;
+  duplicates: number;
+  invalid: number;
+  limited: number;
+}
+
+const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
+const MAX_ENTRY_JSON = 1_000_000; // per-entry cap, matching the community-board 1MB precedent
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function sanitizeImportedEntry(raw: unknown, boardId: string, boxId: string): BlockArchiveEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const e = raw as Record<string, unknown>;
+  if (!Array.isArray(e.items)) return null;
+  if (!e.items.every((i) => i && typeof i === "object" && typeof (i as { type?: unknown }).type === "string")) return null;
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const entry: BlockArchiveEntry = {
+    // Non-UUID ids can't go into the remote PK column — regenerate (loses dedupe for that entry only)
+    id: typeof e.id === "string" && UUID_RE.test(e.id) ? e.id : crypto.randomUUID(),
+    boardId,
+    boxId,
+    title: typeof e.title === "string" ? e.title.slice(0, 200) : "",
+    periodStart: num(e.periodStart),
+    periodEnd: num(e.periodEnd),
+    kind: e.kind === "auto" ? "auto" : "manual",
+    pinned: true,
+    items: e.items as BlockItem[],
+    createdAt: num(e.createdAt) ?? Date.now(),
+  };
+  if (
+    typeof e.imageUrl === "string" &&
+    (/^https?:\/\//.test(e.imageUrl) || e.imageUrl.startsWith("data:image/")) &&
+    e.imageUrl.length < 2_000_000
+  ) {
+    entry.imageUrl = e.imageUrl;
+  }
+  if (JSON.stringify(entry).length > MAX_ENTRY_JSON) return null;
+  return entry;
+}
+
+export async function importBlockArchives(
+  boardId: string,
+  boxId: string,
+  fileText: string
+): Promise<ImportArchivesResult> {
+  const fail: ImportArchivesResult = { ok: false, imported: 0, duplicates: 0, invalid: 0, limited: 0 };
+  if (fileText.length > MAX_IMPORT_BYTES) return fail;
+  let parsed: unknown;
+  try { parsed = JSON.parse(fileText); } catch { return fail; }
+  const rawEntries = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === "object" && Array.isArray((parsed as { entries?: unknown }).entries)
+      ? ((parsed as { entries: unknown[] }).entries)
+      : null;
+  if (!rawEntries) return fail;
+
+  const existing = await listBlockArchives(boardId, boxId);
+  const seenIds = new Set(existing.map((e) => e.id));
+  const seenBoundaries = new Set(
+    existing.filter((e) => e.kind === "auto" && e.periodEnd).map((e) => String(e.periodEnd))
+  );
+
+  const result: ImportArchivesResult = { ok: true, imported: 0, duplicates: 0, invalid: 0, limited: 0 };
+  const uid = signedInUserId();
+  const maxTotal = uid ? MAX_TOTAL_PER_BOX : LOCAL_MAX_TOTAL_PER_BOX;
+  let total = existing.length;
+  const localBatch: BlockArchiveEntry[] = [];
+
+  for (const raw of rawEntries) {
+    const entry = sanitizeImportedEntry(raw, boardId, boxId);
+    if (!entry) { result.invalid++; continue; }
+    if (seenIds.has(entry.id) || (entry.kind === "auto" && entry.periodEnd && seenBoundaries.has(String(entry.periodEnd)))) {
+      result.duplicates++;
+      continue;
+    }
+    if (total >= maxTotal) { result.limited++; continue; }
+
+    if (uid) {
+      const { error } = await supabase.from("block_archives").insert({
+        id: entry.id,
+        board_id: boardId,
+        box_id: boxId,
+        user_id: uid,
+        title: entry.title,
+        period_start: entry.periodStart ? new Date(entry.periodStart).toISOString() : null,
+        period_end: entry.periodEnd ? new Date(entry.periodEnd).toISOString() : null,
+        kind: entry.kind,
+        pinned: true,
+        data: { items: entry.items, ...(entry.imageUrl ? { imageUrl: entry.imageUrl } : {}) },
+        created_at: new Date(entry.createdAt).toISOString(),
+      });
+      if (error) {
+        if (error.code === "23505") { result.duplicates++; continue; }
+        localBatch.push(entry); // degrade to local rather than dropping the entry
+      }
+    } else {
+      localBatch.push(entry);
+    }
+    seenIds.add(entry.id);
+    if (entry.kind === "auto" && entry.periodEnd) seenBoundaries.add(String(entry.periodEnd));
+    total++;
+    result.imported++;
+  }
+
+  if (localBatch.length > 0) {
+    const all = readLocal();
+    all.push(...localBatch);
+    writeLocal(all);
+  }
+  return result;
 }

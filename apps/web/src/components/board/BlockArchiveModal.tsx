@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Braces, Download, FileText, Image as ImageIcon, Pin, PinOff, RotateCcw, Trash2, X } from "lucide-react";
+import { Archive, Braces, Download, FileText, Image as ImageIcon, Pin, PinOff, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import type { BlockItem, Box } from "@/store/boardStore";
 import {
   BlockArchiveEntry, listBlockArchives, deleteBlockArchive,
-  setBlockArchivePinned, downloadArchivesJson, MAX_AUTO_PER_BOX,
+  setBlockArchivePinned, downloadArchivesJson, importBlockArchives, MAX_AUTO_PER_BOX,
 } from "@/lib/blockArchive";
 import { periodLabel, downloadArchivesText, downloadArchivePng, downloadArchiveCapture } from "@/lib/archiveExport";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,28 @@ export function BlockArchiveModal({ boardId, box, onRestore, onClose }: Props) {
   const [entries, setEntries] = useState<BlockArchiveEntry[] | null>(null);
   // Export picker: which entry it's for ("all" = footer button) and where to draw it
   const [exportFor, setExportFor] = useState<{ id: string | "all"; x: number; y: number } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importNote, setImportNote] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  const handleImportFile = async (file: File) => {
+    setImporting(true);
+    try {
+      const res = await importBlockArchives(boardId, box.id, await file.text());
+      if (!res.ok) {
+        setImportNote("Couldn't read that file — is it a Crecoard archive export (.json)?");
+        return;
+      }
+      const parts = [`Imported ${res.imported}`];
+      if (res.duplicates) parts.push(`${res.duplicates} duplicate${res.duplicates !== 1 ? "s" : ""} skipped`);
+      if (res.invalid) parts.push(`${res.invalid} unreadable skipped`);
+      if (res.limited) parts.push(`${res.limited} over the archive limit`);
+      setImportNote(parts.join(" · "));
+      setEntries(await listBlockArchives(boardId, box.id));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -123,22 +145,44 @@ export function BlockArchiveModal({ boardId, box, onRestore, onClose }: Props) {
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3">
-          <p className="text-[11px] text-[var(--text-muted)]">
-            Keeps the last {MAX_AUTO_PER_BOX} auto-saves — pin or export to keep forever.
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-5 py-3">
+          <p className="min-w-0 flex-1 text-[11px] text-[var(--text-muted)]">
+            {importNote ?? `Keeps the last ${MAX_AUTO_PER_BOX} auto-saves — pin or export to keep forever.`}
           </p>
-          {entries && entries.length > 0 && (
-            <button
-              onClick={(ev) => {
-                const r = ev.currentTarget.getBoundingClientRect();
-                setExportFor({ id: "all", x: r.right, y: r.top - 8 });
+          <div className="flex shrink-0 items-center gap-1">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(ev) => {
+                const f = ev.target.files?.[0];
+                ev.target.value = "";
+                if (f) void handleImportFile(f);
               }}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors"
+            />
+            <button
+              disabled={importing}
+              onClick={() => fileRef.current?.click()}
+              title="Import a previously exported archive (.json) into this block"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-overlay)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
             >
-              <Download size={12} />
-              Export all
+              <Upload size={12} />
+              {importing ? "Importing…" : "Import"}
             </button>
-          )}
+            {entries && entries.length > 0 && (
+              <button
+                onClick={(ev) => {
+                  const r = ev.currentTarget.getBoundingClientRect();
+                  setExportFor({ id: "all", x: r.right, y: r.top - 8 });
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors"
+              >
+                <Download size={12} />
+                Export all
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Export format picker — .txt for reading anywhere, .png to share, .json for full data */}
