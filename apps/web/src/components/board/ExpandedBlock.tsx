@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
-  useBoardStore, useActiveBoard,
+  useBoardStore, useActiveBoard, suppressUndo,
   BlockItem, Box, ItemType, BoxStyle, isContributableType,
 } from "@/store/boardStore";
 import { useCanEditBoard, useServerBoard, useServerBoardData, roleAllowed } from "@/contexts/ServerBoardContext";
@@ -415,6 +415,24 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
     return () => { prevFocusRef.current?.focus(); };
   }, []);
 
+  // Template-edit mode: leaving the editor by ANY path (X, backdrop, switching
+  // blocks) commits the template — the forgiving default, matching how every
+  // other edit in the app autosaves. Explicit discard is the banner's button.
+  // The commit is deferred one tick: StrictMode's dev double-mount runs this
+  // cleanup immediately on open, and committing then would clear the stash and
+  // silently exit template mode. After the delay, expandedBoxId distinguishes a
+  // real close from a StrictMode remount.
+  useEffect(() => {
+    return () => {
+      window.setTimeout(() => {
+        const st = useBoardStore.getState();
+        if (st.expandedBoxId === boxId) return; // editor still open — not a real close
+        const b = (st.boards.find((x) => x.id === boardId) ?? st.serverBoards[boardId])?.boxes.find((x) => x.id === boxId);
+        if (b?.templateEditStash) suppressUndo(() => st.endTemplateEdit(boardId, boxId, true));
+      }, 80);
+    };
+  }, [boardId, boxId]);
+
   if (!box) return null;
 
   const isLocked = board?.isFinished ?? false;
@@ -625,6 +643,31 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
               <X size={18} />
             </button>
           </div>
+
+          {/* Template-edit banner — box.items currently hold the recurrence template */}
+          {box.templateEditStash && (
+            <div className="flex flex-shrink-0 items-center gap-3 border-b border-[var(--accent)]/40 bg-[var(--accent)]/10 px-5 py-2">
+              <RefreshCw size={13} className="shrink-0 text-[var(--accent)]" />
+              <p className="min-w-0 flex-1 text-[12px] text-[var(--text-secondary)]">
+                <span className="font-semibold text-[var(--accent)]">Editing template</span>
+                {" — this is what the block resets to each "}
+                {box.recurrence ? { daily: "day", weekly: "week", monthly: "month" }[box.recurrence.freq] : "period"}
+                {", not its current contents. Closing saves the template."}
+              </p>
+              <button
+                onClick={() => { suppressUndo(() => useBoardStore.getState().endTemplateEdit(boardId, boxId, false)); close(); }}
+                className="shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-overlay)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                Discard changes
+              </button>
+              <button
+                onClick={() => { suppressUndo(() => useBoardStore.getState().endTemplateEdit(boardId, boxId, true)); close(); }}
+                className="shrink-0 rounded-lg bg-[var(--accent)] px-2.5 py-1 text-[12px] font-semibold text-white hover:opacity-90 transition-opacity"
+              >
+                Save template
+              </button>
+            </div>
+          )}
 
           {/* Canvas */}
           <div

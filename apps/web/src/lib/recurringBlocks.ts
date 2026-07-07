@@ -51,9 +51,19 @@ export function runDueRecurringResets(
   if (!board || board.isFinished) return;
   const now = Date.now();
 
+  // Crash recovery: a template-edit stash with no open editor means the session
+  // died mid-edit (reload/crash). Discard the partial template edits and restore
+  // the live items so the block isn't stuck displaying its template.
+  for (const box of board.boxes) {
+    if (box.templateEditStash && st.expandedBoxId !== box.id) {
+      st.endTemplateEdit(boardId, box.id, false);
+    }
+  }
+
   for (const box of board.boxes) {
     const rec = box.recurrence;
-    if (!rec || now < rec.nextResetAt) continue;
+    // Never reset mid-template-edit — the box currently holds the template, not live items
+    if (!rec || box.templateEditStash || now < rec.nextResetAt) continue;
 
     if (rec.autoArchive && box.items.length > 0) {
       void saveBlockArchive({

@@ -8,7 +8,7 @@ import {
   SquareDashedMousePointer, Maximize2, CheckSquare, CheckCircle2,
   LayoutGrid, Plus, ShieldCheck, RefreshCw, Archive, History,
 } from "lucide-react";
-import { Box, BlockItem, BoxRecurrence, useBoardStore } from "@/store/boardStore";
+import { Box, BlockItem, BoxRecurrence, useBoardStore, suppressUndo } from "@/store/boardStore";
 import { useCanEditBoard, useServerBoard } from "@/contexts/ServerBoardContext";
 import { BoxPermissionModal } from "./PermissionModal";
 import { RecurrenceModal } from "./RecurrenceModal";
@@ -856,7 +856,16 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
       )}
 
       {recurrenceOpen && (
-        <RecurrenceModal box={box} onApply={applyRecurrence} onClose={() => setRecurrenceOpen(false)} />
+        <RecurrenceModal
+          box={box}
+          onApply={applyRecurrence}
+          onEditTemplate={() => {
+            // Swapping the template in/out is mode plumbing, not content edits — keep it out of undo
+            suppressUndo(() => useBoardStore.getState().beginTemplateEdit(boardId, box.id));
+            setExpandedBox(box.id);
+          }}
+          onClose={() => setRecurrenceOpen(false)}
+        />
       )}
 
       {archiveOpen && (

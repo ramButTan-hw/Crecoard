@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 interface Props {
   box: Box;
   onApply: (recurrence: BoxRecurrence | undefined) => void;
+  /** Open the template in the expanded editor (only offered once recurrence exists) */
+  onEditTemplate: () => void;
   onClose: () => void;
 }
 
@@ -18,7 +20,7 @@ interface Props {
  * block's contents snap back to a saved template (with optional archiving of the
  * outgoing contents). The template is frozen from the block's current items.
  */
-export function RecurrenceModal({ box, onApply, onClose }: Props) {
+export function RecurrenceModal({ box, onApply, onEditTemplate, onClose }: Props) {
   const existing = box.recurrence;
   const [freq, setFreq] = useState<RecurrenceFreq>(existing?.freq ?? "daily");
   const [autoArchive, setAutoArchive] = useState(existing?.autoArchive ?? true);
@@ -98,10 +100,20 @@ export function RecurrenceModal({ box, onApply, onClose }: Props) {
           </label>
         )}
 
-        <p className="mb-4 mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[11px] text-[var(--text-muted)]">
-          Template: {templateCount} item{templateCount !== 1 ? "s" : ""} · Next reset:{" "}
-          {nextReset.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-        </p>
+        <div className="mb-4 mt-3 flex items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+          <span className="text-[11px] text-[var(--text-muted)]">
+            Template: {templateCount} item{templateCount !== 1 ? "s" : ""} · Next reset:{" "}
+            {nextReset.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+          </span>
+          {existing && (
+            <button
+              onClick={() => { onClose(); onEditTemplate(); }}
+              className="shrink-0 text-[11px] font-medium text-[var(--accent)] hover:underline"
+            >
+              Edit template →
+            </button>
+          )}
+        </div>
 
         <div className="flex items-center justify-between">
           {existing ? (
