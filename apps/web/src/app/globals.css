@@ -1,0 +1,192 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Default token values (overridden by JS via setProperty) ───────────── */
+:root {
+  --surface: #1a1b1e;
+  --surface-raised: #25262b;
+  --surface-overlay: #2c2d33;
+  --sidebar: #141517;
+  --accent: #d59ee8;
+  --accent-hover: #c47fd6;
+  --border: #373a40;
+  --text-primary: #f2f2f2;
+  --text-secondary: #a6a7ab;
+  --text-muted: #6d6f75;
+  --grid-color: rgba(255, 255, 255, 0.08);
+  --grid-accent-color: rgba(255, 255, 255, 0.18);
+  --app-font: "Inter", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--surface);
+  color: var(--text-primary);
+  font-family: var(--app-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Chrome-less scroll container (drag-to-pan surfaces like the expanded-block canvas) */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Board / expanded block grid — dot grid with major (100px) + minor (20px) intervals */
+.board-grid {
+  background-image:
+    radial-gradient(circle, var(--grid-accent-color) 1.5px, transparent 1.5px),
+    radial-gradient(circle, var(--grid-color) 1px, transparent 1px);
+  background-size: 100px 100px, 20px 20px;
+  background-position: 0 0, 0 0;
+}
+
+/* Low-zoom grid: only show major dots to avoid visual clutter */
+.board-grid-major {
+  background-image:
+    radial-gradient(circle, var(--grid-accent-color) 1.5px, transparent 1.5px);
+  background-size: 100px 100px;
+  background-position: 0 0;
+}
+
+/* Dragging state */
+.dragging { opacity: 0.5; cursor: grabbing !important; }
+
+/* Pan-on-drag: pannable areas show grab cursor */
+[data-pannable] { cursor: grab; }
+[data-pannable]:active { cursor: grabbing; }
+
+/* Selection ring */
+.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ─── Document editor (text item) ──────────────────────────────────────────── */
+.doc-editor { line-height: 1.6; }
+.doc-editor h1 { font-size: 1.8em; font-weight: 700; line-height: 1.2; margin: 0.4em 0 0.2em; }
+.doc-editor h2 { font-size: 1.35em; font-weight: 600; line-height: 1.3; margin: 0.35em 0 0.15em; }
+.doc-editor h3 { font-size: 1.12em; font-weight: 600; line-height: 1.35; margin: 0.3em 0 0.1em; }
+.doc-editor ul { padding-left: 1.4em; margin: 0.2em 0; list-style-type: disc; }
+.doc-editor ol { padding-left: 1.4em; margin: 0.2em 0; list-style-type: decimal; }
+.doc-editor li { margin-bottom: 0.15em; list-style: inherit; }
+.doc-editor blockquote { border-left: 3px solid var(--accent); padding-left: 0.75em; opacity: 0.8; margin: 0.3em 0; font-style: italic; }
+.doc-editor pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; background: var(--surface-overlay); border: 1px solid var(--border); border-radius: 6px; padding: 0.5em 0.75em; margin: 0.3em 0; white-space: pre-wrap; overflow-x: auto; }
+.doc-editor code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; background: var(--surface-overlay); border-radius: 3px; padding: 0 0.3em; }
+.doc-editor pre code { background: none; padding: 0; }
+.doc-editor a { color: var(--accent); text-decoration: underline; cursor: pointer; }
+.doc-editor a:hover { opacity: 0.8; }
+.doc-editor p { margin-bottom: 0.3em; }
+.doc-editor p:last-child { margin-bottom: 0; }
+.doc-editor hr { border: none; border-top: 1px solid var(--border); margin: 0.75em 0; }
+.doc-editor span[data-checked="true"] { color: var(--accent); }
+
+/* ── Mobile / touch ─────────────────────────────────────────────────────────
+   Foundation for touch screens. Components opt into mobile layouts via the
+   useIsMobile hook + Tailwind md: breakpoints; these are the global defaults. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+/* Safe-area helpers (notches / home indicator) — used by mobile sheets + bars. */
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.h-safe-bottom { height: env(safe-area-inset-bottom); }
+
+@media (hover: none) and (pointer: coarse) {
+  /* Hover-only action affordances (drag grips, row actions, reactions) can't be
+     reached on touch — opt them in with `touch-reveal` to stay visible. */
+  .touch-reveal { opacity: 1 !important; }
+  /* Comfortable minimum tap target for icon buttons that opt in. */
+  .tap-target { min-width: 40px; min-height: 40px; }
+}
+
+/* ── Board-level item drag ──────────────────────────────────────────────────
+   Item chrome tagged with data-item-drag (chat/community/twitch headers) moves
+   the whole item when it's rendered directly on the board canvas. Scoped to
+   .board-item-widget so the same headers inside boxes keep normal cursors. */
+.board-item-widget [data-item-drag] { cursor: grab; user-select: none; -webkit-user-select: none; }
+.board-item-widget [data-item-drag]:active { cursor: grabbing; }
+
+
+/* ── Item / text animations ─────────────────────────────────────────────────
+   CSS-only, transform+opacity (compositor-safe). Duration via --cr-dur.
+   fade/rise/scale/wipe play once on mount; pulse/float loop. */
+@keyframes cr-fade  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes cr-rise  { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+@keyframes cr-scale { from { opacity: 0; transform: scale(0.92) } to { opacity: 1; transform: none } }
+@keyframes cr-wipe  { from { clip-path: inset(0 100% 0 0) } to { clip-path: inset(0 0 0 0) } }
+@keyframes cr-pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.68 } }
+@keyframes cr-float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+@keyframes cr-glow-pulse { 0%, 100% { opacity: 0.25 } 50% { opacity: 1 } }
+.cr-anim-fade  { animation: cr-fade  var(--cr-dur, 0.6s) ease-out both; }
+.cr-anim-rise  { animation: cr-rise  var(--cr-dur, 0.6s) cubic-bezier(0.22, 1, 0.36, 1) both; }
+.cr-anim-scale { animation: cr-scale var(--cr-dur, 0.5s) cubic-bezier(0.22, 1, 0.36, 1) both; }
+.cr-anim-wipe  { animation: cr-wipe  var(--cr-dur, 0.8s) ease-out both; }
+.cr-anim-pulse { animation: cr-pulse calc(var(--cr-dur, 0.6s) * 5) ease-in-out infinite; }
+.cr-anim-float { animation: cr-float calc(var(--cr-dur, 0.6s) * 6) ease-in-out infinite; }
+.cr-glow-pulse-layer { animation: cr-glow-pulse 2.6s ease-in-out infinite; pointer-events: none; }
+/* Stationary loops: glitch (stepped jitter + static RGB split), breathe, rainbow text */
+@keyframes cr-glitch {
+  0%, 7%, 13%, 55%, 61%, 100% { transform: translate(0, 0) skewX(0deg); }
+  8%  { transform: translate(-2px, 1px) skewX(-2deg); }
+  10% { transform: translate(2px, -1px) skewX(1.5deg); }
+  12% { transform: translate(-1px, -1px) skewX(0.5deg); }
+  56% { transform: translate(2px, 1px) skewX(2deg); }
+  58% { transform: translate(-2px, 0) skewX(-1deg); }
+}
+@keyframes cr-breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.045); opacity: 0.92; }
+}
+@keyframes cr-rainbow { from { background-position: 0% 0; } to { background-position: 300% 0; } }
+.cr-anim-glitch {
+  animation: cr-glitch calc(var(--cr-dur, 0.6s) * 4) steps(1, end) infinite;
+  text-shadow: 1.5px 0 rgba(255, 70, 70, 0.7), -1.5px 0 rgba(70, 200, 255, 0.7);
+}
+.cr-anim-breathe { animation: cr-breathe calc(var(--cr-dur, 0.6s) * 6) ease-in-out infinite; }
+.cr-anim-rainbow {
+  background-image: linear-gradient(90deg, #f87171, #fbbf24, #4ade80, #38bdf8, #a78bfa, #f472b6, #f87171);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: cr-rainbow calc(var(--cr-dur, 0.6s) * 8) linear infinite;
+}
+.cr-anim-rainbow, .cr-anim-rainbow * { -webkit-text-fill-color: transparent; }
+/* Loading skeleton — pulsing surface block for content that is on its way */
+@keyframes cr-skeleton { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+.cr-skeleton {
+  background: var(--surface-overlay);
+  border-radius: 8px;
+  animation: cr-skeleton 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-skeleton { animation: none; }
+  .cr-anim-fade, .cr-anim-rise, .cr-anim-scale, .cr-anim-wipe,
+  .cr-anim-pulse, .cr-anim-float, .cr-glow-pulse-layer,
+  .cr-anim-glitch, .cr-anim-breathe, .cr-anim-rainbow,
+  [class^="cr-cust-"], [class*=" cr-cust-"] { animation: none !important; }
+  .cr-anim-glitch { text-shadow: none; }
+}
+
+
+/* ── Accessibility floor ────────────────────────────────────────────────────
+   Visible keyboard-focus ring app-wide; mouse clicks stay ring-free via
+   :focus-visible. Inputs keep their border-color focus styles. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+input:focus-visible, textarea:focus-visible, [contenteditable]:focus-visible {
+  outline: none;
+}

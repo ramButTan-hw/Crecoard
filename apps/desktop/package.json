@@ -1,0 +1,73 @@
+{
+  "name": "@plancraft/desktop",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Crecoard — modular board planner",
+  "author": "Crecoard",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run start:web\" \"wait-on http://localhost:3000 && electron .\"",
+    "start:web": "cd ../web && next dev",
+    "build": "electron-builder",
+    "pack": "electron-builder --dir",
+    "release": "electron-builder --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "koffi": "^2.9.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^42.5.1",
+    "electron-builder": "^26.15.3",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.plancraft.app",
+    "productName": "Crecoard",
+    "electronVersion": "42.5.1",
+    "publish": [
+      { "provider": "github", "owner": "ramButTan-hw", "repo": "Crecoard-releases", "releaseType": "release" }
+    ],
+    "protocols": [
+      {
+        "name": "Crecoard",
+        "schemes": ["crecoard"]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "artifactName": "Crecoard-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Utility"
+    }
+  }
+}

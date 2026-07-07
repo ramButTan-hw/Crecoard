@@ -1,0 +1,13 @@
+<svg viewBox="0 0 375 375" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded square background -->
+  <rect width="375" height="375" rx="80" fill="#fbc5ff"/>
+  <!-- White clover body -->
+  <circle cx="124.5" cy="127.1" r="78.2" fill="white"/>
+  <circle cx="255.4" cy="127.1" r="78.2" fill="white"/>
+  <circle cx="128.2" cy="236.0" r="78.2" fill="white"/>
+  <circle cx="255.4" cy="236.0" r="78.2" fill="white"/>
+  <circle cx="187.5" cy="187.5" r="78.2" fill="white"/>
+  <!-- Pink eyes -->
+  <circle cx="145.8" cy="164.5" r="17.6" fill="#fbc5ff"/>
+  <circle cx="237.8" cy="164.5" r="17.6" fill="#fbc5ff"/>
+</svg>

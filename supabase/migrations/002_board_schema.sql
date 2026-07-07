@@ -1,0 +1,1 @@
+-- Superseded by 20260627000002_boards.sql and later migrations. No-op.
