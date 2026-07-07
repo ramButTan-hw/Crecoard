@@ -39,7 +39,8 @@
       "output": "dist"
     },
     "files": [
-      "src/**/*"
+      "src/**/*",
+      "assets/**/*"
     ],
     "win": {
       "target": [

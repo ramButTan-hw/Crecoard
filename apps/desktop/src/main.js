@@ -308,7 +308,14 @@ function updateTrayMenu() {
 
 function buildTray() {
   try {
-    const img = nativeImage.createFromPath(path.join(__dirname, "../assets/icon.png"));
+    const iconPath = path.join(__dirname, "../assets/icon.png");
+    const img = nativeImage.createFromPath(iconPath);
+    // An unreadable path yields an EMPTY image, not an error — Windows then shows
+    // a blank tray slot. Fail loudly instead of registering an invisible icon.
+    if (img.isEmpty()) {
+      console.error(`[tray] icon missing or unreadable: ${iconPath} — tray not created`);
+      return;
+    }
     tray = new Tray(process.platform === "win32" ? img.resize({ width: 16, height: 16 }) : img);
     tray.setToolTip("Crecoard");
     tray.on("click", showMainWindow);

@@ -6,11 +6,15 @@ import {
   Edit3, Copy, Trash2, Lock, Unlock,
   CopyPlus, Clipboard, ArrowUpToLine, ArrowDownToLine,
   SquareDashedMousePointer, Maximize2, CheckSquare, CheckCircle2,
-  LayoutGrid, Plus, ShieldCheck,
+  LayoutGrid, Plus, ShieldCheck, RefreshCw, Archive, History,
 } from "lucide-react";
-import { Box, BlockItem, useBoardStore } from "@/store/boardStore";
+import { Box, BlockItem, BoxRecurrence, useBoardStore } from "@/store/boardStore";
 import { useCanEditBoard, useServerBoard } from "@/contexts/ServerBoardContext";
 import { BoxPermissionModal } from "./PermissionModal";
+import { RecurrenceModal } from "./RecurrenceModal";
+import { BlockArchiveModal } from "./BlockArchiveModal";
+import { saveBlockArchive } from "@/lib/blockArchive";
+import { instantiateTemplate } from "@/lib/recurringBlocks";
 import { useCollab } from "@/lib/useCollabSession";
 import { ItemRenderer } from "@/components/items/ItemRenderer";
 import { DeckBox } from "./DeckBox";
@@ -21,6 +25,12 @@ import { cn } from "@/lib/utils";
 
 const MIN_W = 160;
 const MIN_H = 100;
+
+// Quick-pick block colors shown in the right-click menu (first = default surface)
+const BLOCK_COLORS = [
+  "#25262b", "#a2695f", "#b08d42", "#a8a23f", "#6aa84f",
+  "#45a09a", "#4a6fa8", "#9a63c9", "#a85a80",
+];
 
 // ─── Collapsed item card (absolute-positioned, draggable + resizable) ──────────
 
@@ -155,8 +165,8 @@ interface BoardBoxProps {
 
 export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
   const {
-    selectBox, removeBox, updateBox, resizeBox, moveBox, bringToFront, sendToBack,
-    duplicateBox, copyBox, pasteBox, copiedBox, setExpandedBox, setResizeState,
+    selectBox, removeBox, updateBox, updateBoxStyle, resizeBox, moveBox, bringToFront, sendToBack,
+    duplicateBox, copyBox, pasteBox, copiedBox, setExpandedBox, setResizeState, replaceBoxItems,
   } = useBoardStore();
   const zoom = useBoardStore(s => s.zoom);
   const isFinished = useBoardStore(s =>
@@ -168,6 +178,8 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [permModalOpen, setPermModalOpen] = useState(false);
+  const [recurrenceOpen, setRecurrenceOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameInput, setRenameInput] = useState(box.title);
   const [isHovered, setIsHovered] = useState(false);
@@ -381,6 +393,44 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
     setIsRenaming(false);
   }, [boardId, box.id, renameInput, updateBox, broadcastOp]);
 
+  // ─── Block color / recurring reset / archive ────────────────────────────────
+  const setBlockColor = (backgroundColor: string) => {
+    // A wallpaper image renders on top of the background color — clear it so the pick shows
+    const style = { backgroundColor, wallpaperUrl: "" };
+    updateBoxStyle(boardId, box.id, style);
+    broadcastOp({ op: "updateBoxStyle", boardId, boxId: box.id, style });
+    setCtxMenu(null);
+  };
+
+  const applyRecurrence = (recurrence: BoxRecurrence | undefined) => {
+    updateBox(boardId, box.id, { recurrence });
+    broadcastOp({ op: "updateBox", boardId, boxId: box.id, patch: { recurrence } });
+  };
+
+  const archiveNow = () => {
+    void saveBlockArchive({
+      boardId, boxId: box.id, title: box.title,
+      periodStart: null, periodEnd: null,
+      kind: "manual", pinned: true, items: box.items,
+    }).then((res) => {
+      if (!res.ok && res.reason === "limit")
+        window.alert("Archive limit reached for this block — delete or export old snapshots first.");
+    });
+  };
+
+  const restoreFromArchive = (items: BlockItem[]) => {
+    // Never destructive: the outgoing contents are archived before being replaced
+    if (box.items.length > 0)
+      void saveBlockArchive({
+        boardId, boxId: box.id, title: box.title,
+        periodStart: null, periodEnd: null,
+        kind: "manual", pinned: false, items: box.items,
+      });
+    const fresh = instantiateTemplate(items);
+    replaceBoxItems(boardId, box.id, fresh);
+    broadcastOp({ op: "replaceBoxItems", boardId, boxId: box.id, items: fresh });
+  };
+
   // ─── Derived styles ──────────────────────────────────────────────────────────
   // Merge collapsedStyle overrides on top of the base style when rendering on the canvas
   const s: typeof box.style = box.collapsedStyle
@@ -454,6 +504,25 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
       icon: <Edit3 size={14} />,
       onClick: () => { setRenameInput(box.title); setIsRenaming(true); },
     },
+    ...(!box.isDeck ? [{
+      label: "Block color",
+      custom: (
+        <div className="flex items-center gap-1.5" role="group" aria-label="Block color">
+          {BLOCK_COLORS.map((c) => (
+            <button
+              key={c}
+              onClick={() => setBlockColor(c)}
+              title="Set block color"
+              className="h-[18px] w-[18px] rounded-full border transition-transform hover:scale-125"
+              style={{
+                background: c,
+                borderColor: s.backgroundColor === c && !s.wallpaperUrl ? "var(--accent)" : "rgba(255,255,255,0.25)",
+              }}
+            />
+          ))}
+        </div>
+      ),
+    }] : []),
     "separator" as const,
     {
       label: "Duplicate",
@@ -499,6 +568,24 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
         broadcastOp({ op: "sendToBack", boardId, boxId: box.id });
       },
     },
+    ...(!box.isDeck ? [
+      "separator" as const,
+      {
+        label: box.recurrence ? "Recurring reset…" : "Make recurring…",
+        icon: <RefreshCw size={14} />,
+        onClick: () => setRecurrenceOpen(true),
+      },
+      {
+        label: "Save to archive",
+        icon: <Archive size={14} />,
+        onClick: archiveNow,
+      },
+      {
+        label: "View archive…",
+        icon: <History size={14} />,
+        onClick: () => setArchiveOpen(true),
+      },
+    ] : []),
     "separator" as const,
     {
       label: "Reset size",
@@ -656,10 +743,11 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
           </div>
         ) : null}
 
-        {/* Lock badge */}
-        {box.locked && !isFinished && (
-          <div className="absolute top-2 left-2 z-20 pointer-events-none">
-            <Lock size={11} className="text-[var(--accent)] opacity-70" />
+        {/* Lock / recurring badges */}
+        {(box.locked || box.recurrence) && !isFinished && (
+          <div className="absolute top-2 left-2 z-20 pointer-events-none flex items-center gap-1">
+            {box.locked && <Lock size={11} className="text-[var(--accent)] opacity-70" />}
+            {box.recurrence && <RefreshCw size={11} className="text-[var(--accent)] opacity-70" />}
           </div>
         )}
 
@@ -765,6 +853,14 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
           items={canEdit ? blockMenuItems : readOnlyMenuItems}
           onClose={handleCtxMenuClose}
         />
+      )}
+
+      {recurrenceOpen && (
+        <RecurrenceModal box={box} onApply={applyRecurrence} onClose={() => setRecurrenceOpen(false)} />
+      )}
+
+      {archiveOpen && (
+        <BlockArchiveModal boardId={boardId} box={box} onRestore={restoreFromArchive} onClose={() => setArchiveOpen(false)} />
       )}
 
       {permModalOpen && (
