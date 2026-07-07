@@ -13,6 +13,7 @@ import { ITEM_DEFINITIONS } from "./ItemPalette";
 import { BoardItemWidget } from "./BoardItemWidget";
 import { LiveWallpaper, hasLiveWallpaper } from "./LiveWallpaper";
 import { useCollab } from "@/lib/useCollabSession";
+import { runDueRecurringResets } from "@/lib/recurringBlocks";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { CursorState } from "@/lib/collaboration";
 import { BoardBox } from "./BoardBox";
@@ -209,6 +210,16 @@ export function BoardCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const { cursors, onCursorMove, broadcastOp } = useCollab();
+
+  // ── Recurring block resets ────────────────────────────────────────────────
+  // Run lazily on whichever editing client has the board open: once on open,
+  // then every minute so a board left open overnight still resets at midnight.
+  useEffect(() => {
+    if (!boardId || !canEditBoard || isFinished) return;
+    runDueRecurringResets(boardId, broadcastOp);
+    const t = setInterval(() => runDueRecurringResets(boardId, broadcastOp), 60_000);
+    return () => clearInterval(t);
+  }, [boardId, canEditBoard, isFinished, broadcastOp]);
 
   // ── Stale-closure guards for keyboard handlers (M5) ──────────────────────
   const boxesRef = useRef(board?.boxes ?? []);

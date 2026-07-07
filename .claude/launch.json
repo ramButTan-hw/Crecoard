@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js Web (apps/web)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "apps/web",
+      "port": 3005,
+      "autoPort": true
+    },
+    {
+      "name": "Turbo (all workspaces)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": ".",
+      "port": 3006,
+      "autoPort": true
+    },
+    {
+      "name": "Electron Desktop (apps/desktop)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "apps/desktop",
+      "port": 3007,
+      "autoPort": true
+    }
+  ]
+}
