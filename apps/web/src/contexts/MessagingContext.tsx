@@ -116,13 +116,14 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
 
     if (error || !data) { loaded.current.delete(conversationId); return; }
 
-    // Batch-fetch profiles for display names
+    // Batch-fetch profiles for display names + avatars
     const authorIds = [...new Set(data.map((m) => m.author_id as string))];
     const { data: profiles } = authorIds.length
-      ? await supabase.from("profiles").select("id, display_name").in("id", authorIds)
+      ? await supabase.from("profiles").select("id, display_name, avatar_url").in("id", authorIds)
       : { data: [] };
 
     const nameMap = new Map((profiles ?? []).map((p) => [p.id as string, p.display_name as string]));
+    const avatarMap = new Map((profiles ?? []).map((p) => [p.id as string, p.avatar_url as string | null]));
 
     const msgs: DmMessage[] = data.map((row) => {
       const name = nameMap.get(row.author_id as string) || "Unknown";
@@ -131,7 +132,7 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
         conversationId: row.conversation_id as string,
         authorId:       row.author_id as string,
         authorName:     name,
-        authorAvatar:   name[0]?.toUpperCase() ?? "?",
+        authorAvatar:   avatarMap.get(row.author_id as string) || (name[0]?.toUpperCase() ?? "?"),
         content:        (row.content as string) || "",
         gifUrl:         row.gif_url as string | undefined,
         imageUrl:       row.image_url as string | undefined,
@@ -162,10 +163,10 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
           const row = payload.new as Record<string, unknown>;
           const authorId = row.author_id as string;
 
-          // Fetch author display name
+          // Fetch author display name + avatar
           const { data: profile } = await supabase
             .from("profiles")
-            .select("display_name")
+            .select("display_name, avatar_url")
             .eq("id", authorId)
             .maybeSingle();
 
@@ -175,7 +176,7 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
             conversationId: row.conversation_id as string,
             authorId,
             authorName:     name,
-            authorAvatar:   name[0]?.toUpperCase() ?? "?",
+            authorAvatar:   (profile?.avatar_url as string | null) || (name[0]?.toUpperCase() ?? "?"),
             content:        (row.content as string) || "",
             gifUrl:         row.gif_url as string | undefined,
             imageUrl:       row.image_url as string | undefined,
@@ -220,7 +221,7 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
       conversationId,
       authorId:       user.id,
       authorName:     displayName,
-      authorAvatar:   displayName[0]?.toUpperCase() ?? "Y",
+      authorAvatar:   identity.avatarUrl || (displayName[0]?.toUpperCase() ?? "Y"),
       content,
       gifUrl:         options?.gifUrl,
       imageUrl:       options?.imageUrl,

@@ -509,6 +509,17 @@ export function VisualizerItem({ item }: { item: BlockItem; upd: Upd; collapsed?
     ro.observe(canvas);
     window.addEventListener("resize", resize); // backup for cases RO can miss (window maximize)
 
+    // Browsers gate AudioContext behind a user gesture (autoplay policy). This
+    // context is created in an async callback AFTER the permission prompt — i.e.
+    // outside any gesture — so it starts "suspended" and the analyser reads pure
+    // silence, leaving the visualizer frozen/non-reactive. (Electron defaults to
+    // no-user-gesture-required autoplay, which is why the desktop app worked.)
+    // resume() only succeeds from within a gesture, so hook the next real one.
+    const resumeOnGesture = () => { void audioCtx?.resume().catch(() => {}); };
+    window.addEventListener("pointerdown", resumeOnGesture);
+    window.addEventListener("keydown", resumeOnGesture);
+    window.addEventListener("touchstart", resumeOnGesture, { passive: true });
+
     (async () => {
       if (source === "off") return;
       try {
@@ -531,6 +542,14 @@ export function VisualizerItem({ item }: { item: BlockItem; upd: Upd; collapsed?
         analyser.fftSize = 1024; // longer time-domain window → smoother, more-structured waveform
         analyser.smoothingTimeConstant = 0.6; // snappier → bars react instead of hovering
         srcNode.connect(analyser);
+        // Keep the analyser in a subgraph that reaches the destination via a
+        // muted sink. Some browsers don't "pull" a dangling analyser (one wired
+        // to nothing), so it reads zeros; the zero-gain node routes it to the
+        // destination without any audible output (no mic feedback / echo).
+        const sink = audioCtx.createGain();
+        sink.gain.value = 0;
+        analyser.connect(sink);
+        sink.connect(audioCtx.destination);
         freqData = new Uint8Array(analyser.frequencyBinCount);
         timeData = new Uint8Array(analyser.fftSize);
       } catch { /* denied / unavailable → procedural fallback */ }
@@ -606,6 +625,9 @@ export function VisualizerItem({ item }: { item: BlockItem; upd: Upd; collapsed?
       cancelAnimationFrame(raf);
       ro.disconnect();
       window.removeEventListener("resize", resize);
+      window.removeEventListener("pointerdown", resumeOnGesture);
+      window.removeEventListener("keydown", resumeOnGesture);
+      window.removeEventListener("touchstart", resumeOnGesture);
       stream?.getTracks().forEach((t) => t.stop());
       audioCtx?.close().catch(() => {});
     };

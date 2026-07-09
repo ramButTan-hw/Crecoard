@@ -337,6 +337,10 @@ export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props
             handleDragStart(e);
             return;
           }
+          // Tables are dense interactive surfaces (cells, column resizing,
+          // scrolling) — body-drag fires by accident constantly, so a table
+          // moves ONLY from its top drag handle, never the body.
+          if (item.type === "table") return;
           // Presses inside genuinely scrollable content belong to the content.
           let n: HTMLElement | null = el;
           while (n && n !== e.currentTarget) {

@@ -253,9 +253,12 @@ export interface TableFilter {
 export interface TableColumn {
   id: string;
   name: string;
-  type: "text" | "number" | "checkbox" | "select" | "date" | "url" | "member"; // member cells store a ServerMember.userId
+  type: "text" | "number" | "checkbox" | "select" | "date" | "url" | "member" | "image"; // member cells store a ServerMember.userId; image cells store an image URL (or data URL in guest mode)
   width?: number;
   options?: string[];
+  imageSize?: number;               // image row height (px) for image columns; width follows aspect ratio; default 44
+  imageFit?: "contain" | "cover";   // "contain" keeps the whole image (aspect preserved); "cover" crops to a square; default "contain"
+  fontSize?: number;                // per-column cell font size (px); falls back to the table-wide font size when unset
   summaryFn?: "none" | "sum" | "avg" | "count" | "min" | "max" | "count_checked" | "percent_checked" | "count_empty" | "count_filled";
 }
 
@@ -675,6 +678,15 @@ export interface BlockItem {
   tableShowTitle?: boolean;
   tableColumns?: TableColumn[];
   tableRows?: TableRow[];
+  /** Per-cell formatting overrides, keyed by `${rowId}:${colId}`. Overrides the column, which overrides the table default. */
+  tableCellStyles?: Record<string, {
+    fontSize?: number;
+    bold?: boolean;
+    italic?: boolean;
+    color?: string;
+    imageSize?: number;
+    imageFit?: "contain" | "cover";
+  }>;
   tableStriped?: boolean;
   tableHeaderColor?: string;
   tableFontFamily?: string;
@@ -1038,6 +1050,33 @@ function findBoardAny(s: AnyBoardState, boardId: string): Board | undefined {
 
 function findBox(s: AnyBoardState, boardId: string, boxId: string) {
   return findBoardAny(s, boardId)?.boxes.find((b) => b.id === boxId);
+}
+
+// ─── Canvas stacking ──────────────────────────────────────────────────────────
+// Boxes and board-level items are siblings on the canvas and share ONE z-index
+// space — so "bring to front" / "send to back" must consider both, or a box
+// won't restack relative to a loose item (and vice-versa). zIndex must also stay
+// >= 0: the board background sits at z-index:auto, so a negative value would hide
+// the element behind it.
+type ZStackEl = { zIndex: number };
+function zStack(board: Board): ZStackEl[] {
+  return [...board.boxes, ...(board.boardItems ?? [])];
+}
+function bringZToFront(board: Board, target: ZStackEl): void {
+  const maxZ = zStack(board).reduce((m, o) => Math.max(m, o.zIndex), 0);
+  target.zIndex = maxZ + 1;
+}
+function sendZToBack(board: Board, target: ZStackEl): void {
+  const others = zStack(board).filter((o) => o !== target);
+  const minZ = others.reduce((m, o) => Math.min(m, o.zIndex), Infinity);
+  if (Number.isFinite(minZ) && minZ - 1 >= 0) {
+    target.zIndex = minZ - 1;
+  } else {
+    // Already at the floor (0) — can't go negative without hiding behind the
+    // background, so lift everything else up by one and keep the target at 0.
+    for (const o of others) o.zIndex += 1;
+    target.zIndex = 0;
+  }
 }
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -1552,19 +1591,15 @@ export const useBoardStore = create<BoardState>()(
     bringToFront: (boardId, boxId) =>
       set((s) => {
         const board = findBoardAny(s, boardId);
-        if (!board) return;
-        const maxZ = board.boxes.reduce((m, b) => Math.max(m, b.zIndex), 0);
-        const box = board.boxes.find((b) => b.id === boxId);
-        if (box) box.zIndex = maxZ + 1;
+        const box = board?.boxes.find((b) => b.id === boxId);
+        if (board && box) bringZToFront(board, box);
       }),
 
     sendToBack: (boardId, boxId) =>
       set((s) => {
         const board = findBoardAny(s, boardId);
-        if (!board) return;
-        const minZ = board.boxes.reduce((m, b) => Math.min(m, b.zIndex), Infinity);
-        const box = board.boxes.find((b) => b.id === boxId);
-        if (box) box.zIndex = minZ > 0 ? minZ - 1 : 0;
+        const box = board?.boxes.find((b) => b.id === boxId);
+        if (board && box) sendZToBack(board, box);
       }),
 
     duplicateBox: (boardId, boxId) =>
@@ -1835,19 +1870,15 @@ export const useBoardStore = create<BoardState>()(
     bringBoardItemToFront: (boardId, itemId) =>
       set((s) => {
         const board = findBoardAny(s, boardId);
-        if (!board) return;
-        const maxZ = Math.max(0, ...board.boxes.map(b => b.zIndex), ...(board.boardItems ?? []).map(i => i.zIndex));
-        const item = board.boardItems?.find((i) => i.id === itemId);
-        if (item) item.zIndex = maxZ + 1;
+        const item = board?.boardItems?.find((i) => i.id === itemId);
+        if (board && item) bringZToFront(board, item);
       }),
 
     sendBoardItemToBack: (boardId, itemId) =>
       set((s) => {
         const board = findBoardAny(s, boardId);
-        if (!board) return;
-        const minZ = Math.min(Infinity, ...board.boxes.map(b => b.zIndex), ...(board.boardItems ?? []).map(i => i.zIndex));
-        const item = board.boardItems?.find((i) => i.id === itemId);
-        if (item) item.zIndex = isFinite(minZ) && minZ > 0 ? minZ - 1 : 0;
+        const item = board?.boardItems?.find((i) => i.id === itemId);
+        if (board && item) sendZToBack(board, item);
       }),
 
     duplicateBoardItem: (boardId, itemId) =>

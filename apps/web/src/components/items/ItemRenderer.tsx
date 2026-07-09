@@ -6663,7 +6663,7 @@ export function CalendarStylePanel({ item, upd, boardId, boxId }: { item: BlockI
 
 // ─── Table ───────────────────────────────────────────────────────────────────
 
-const COL_TYPE_ICONS: Record<string, string> = { text: "T", number: "#", checkbox: "☑", select: "▾", date: "📅", url: "🔗", member: "@" };
+const COL_TYPE_ICONS: Record<string, string> = { text: "T", number: "#", checkbox: "☑", select: "▾", date: "📅", url: "🔗", member: "@", image: "🖼" };
 
 function idxToColLetter(idx: number): string {
   let result = '';
@@ -6674,7 +6674,7 @@ function idxToColLetter(idx: number): string {
   }
   return result;
 }
-const DEFAULT_COL_TYPES = ["text","number","checkbox","select","date","url","member"] as const;
+const DEFAULT_COL_TYPES = ["text","number","checkbox","select","date","url","member","image"] as const;
 
 // ── Formula evaluation engine ─────────────────────────────────────────────────
 
@@ -6896,7 +6896,7 @@ function formatFormulaResult(v: number | string): string {
   return String(v);
 }
 
-function TableCell({ col, value, onChange, isFinished, onKeyDown, fontColor, fontSize, fontFamily, cellKey, onHTMLInput, dismissSel, cols, rows, cellRef, onCellFocus, onCellBlur }: {
+function TableCell({ col, value, onChange, isFinished, onKeyDown, fontColor, fontSize, fontFamily, cellKey, onHTMLInput, dismissSel, cols, rows, cellRef, onCellFocus, onCellBlur, imageSize, imageFit, bold, italic, onResizeImage }: {
   col: TableColumn; value: string | boolean; onChange: (v: string | boolean) => void;
   isFinished?: boolean; onKeyDown?: (e: React.KeyboardEvent) => void;
   fontColor?: string; fontSize?: number; fontFamily?: string;
@@ -6904,15 +6904,22 @@ function TableCell({ col, value, onChange, isFinished, onKeyDown, fontColor, fon
   cols?: TableColumn[]; rows?: TableRow[];
   cellRef?: string;
   onCellFocus?: (ref: string, formula?: string) => void; onCellBlur?: () => void;
+  // Per-cell overrides (resolved by the parent: cell → column → table default)
+  imageSize?: number; imageFit?: "contain" | "cover";
+  bold?: boolean; italic?: boolean;
+  onResizeImage?: (size: number, fitColWidth?: number) => void;
 }) {
   const [focused, setFocused] = useState(false);
   const [memberPickerAt, setMemberPickerAt] = useState<{ x: number; y: number } | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const { members } = useServerBoard();
   const base = "w-full bg-transparent outline-none placeholder:text-[var(--text-muted)]";
   const cellStyle: React.CSSProperties = {
     color: fontColor ?? "var(--text-primary)",
-    fontSize: fontSize ?? 12,
+    fontSize: fontSize ?? 12, // resolved per-cell/column/table font size, computed by the parent
     fontFamily: fontFamily ?? "inherit",
+    fontWeight: bold ? 700 : undefined,
+    fontStyle: italic ? "italic" : undefined,
   };
 
   if (col.type === "member") {
@@ -6951,6 +6958,102 @@ function TableCell({ col, value, onChange, isFinished, onKeyDown, fontColor, fon
           />
         )}
       </>
+    );
+  }
+
+  if (col.type === "image") {
+    const url = typeof value === "string" ? value : "";
+    const pick = () => imageInputRef.current?.click();
+    const h = Math.max(16, Math.min(400, imageSize ?? col.imageSize ?? 44));
+    const fit = imageFit ?? col.imageFit ?? "contain";
+    // "contain" (default) keeps the whole image at its natural aspect ratio,
+    // sized by height with width capped to the column; "cover" crops to a square.
+    const imgStyle: React.CSSProperties = fit === "cover"
+      ? { width: h, height: h, objectFit: "cover" }
+      : { height: h, width: "auto", maxWidth: "100%", objectFit: "contain" };
+
+    // Drag the corner handle to resize THIS image (per-cell override). Deltas are
+    // screen px → divide by board zoom to get the image's own px. The column
+    // width is grown/shrunk to fit the image's displayed width so nothing clips.
+    const startResize = (e: React.PointerEvent) => {
+      if (isFinished || !onResizeImage) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const startX = e.clientX, startY = e.clientY;
+      const startH = h;
+      const zoom = useBoardStore.getState().zoom || 1;
+      const imgEl = (e.currentTarget as HTMLElement).parentElement?.querySelector("img") as HTMLImageElement | null;
+      const aspect = imgEl && imgEl.naturalHeight > 0 ? imgEl.naturalWidth / imgEl.naturalHeight : 1;
+      const onMove = (ev: PointerEvent) => {
+        const d = Math.max(ev.clientX - startX, ev.clientY - startY) / zoom;
+        const size = Math.max(16, Math.min(400, Math.round(startH + d)));
+        const dispW = fit === "cover" ? size : size * aspect;
+        const fitColW = Math.max(60, Math.ceil(dispW) + 24); // + cell padding + handle room
+        onResizeImage(size, fitColW);
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    };
+
+    return (
+      <div className="flex items-center gap-1.5" onMouseDown={e => e.stopPropagation()}>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            // Instant data-URL preview, then swap to the durable Storage URL
+            // (guest mode has no Storage → the data URL persists, as elsewhere).
+            if (f) applyImageUpload(f, (u) => onChange(u), "table");
+          }}
+        />
+        {url ? (
+          // Relative wrapper so the remove/resize chrome overlays the corner
+          // instead of stealing row width from a variable-width (aspect) image.
+          <div className="group/imgcell relative inline-flex min-w-0">
+            <img
+              src={url}
+              alt=""
+              className="rounded border border-[var(--border)]"
+              style={{ ...imgStyle, cursor: isFinished ? "default" : "pointer" }}
+              onClick={e => { e.stopPropagation(); if (!isFinished) pick(); }}
+              title={isFinished ? undefined : "Click to replace · drag corner to resize"}
+            />
+            {!isFinished && (
+              <button
+                onClick={e => { e.stopPropagation(); onChange(""); }}
+                className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--surface-raised)] text-[var(--text-muted)] opacity-0 shadow ring-1 ring-[var(--border)] transition-opacity hover:text-red-400 group-hover/imgcell:opacity-100"
+                title="Remove image"
+              ><XIcon size={10} /></button>
+            )}
+            {!isFinished && onResizeImage && (
+              <div
+                onPointerDown={startResize}
+                onClick={e => e.stopPropagation()}
+                className="absolute bottom-0 right-0 opacity-0 transition-opacity group-hover/imgcell:opacity-100"
+                style={{ width: 12, height: 12, cursor: "nwse-resize", touchAction: "none",
+                  background: "linear-gradient(135deg, transparent 45%, var(--accent) 45%)", borderRadius: "0 0 4px 0" }}
+                title="Drag to resize"
+              />
+            )}
+          </div>
+        ) : isFinished ? (
+          <span style={{ color: "var(--text-muted)" }}>—</span>
+        ) : (
+          <button
+            onClick={e => { e.stopPropagation(); pick(); }}
+            className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+            style={cellStyle}
+          ><ImageIcon size={12} /> Add</button>
+        )}
+      </div>
     );
   }
 
@@ -7244,6 +7347,9 @@ function TableItem({ item, upd, collapsed, isFinished, boardId, boxId, extraCont
     if (typeof raw === "boolean") return raw ? "true" : "false";
     const s = (raw as string) ?? "";
     if (c.type === "member" && s) return memberById.get(s)?.username ?? s;
+    // Image cells hold a URL — keep it out of text projections (search/sort/CSV/
+    // collapsed preview) so a long data/blob URL never leaks in as visible text.
+    if (c.type === "image") return "";
     return s;
   }, [memberById]);
   const striped = item.tableStriped ?? false;
@@ -7325,6 +7431,26 @@ function TableItem({ item, upd, collapsed, isFinished, boardId, boxId, extraCont
   const setCell = (rowId: string, colId: string, v: string | boolean) => {
     updRows(rows.map(r => r.id === rowId ? { ...r, cells: { ...r.cells, [colId]: v } } : r));
   };
+
+  // ── Per-cell formatting (font size, image size/fit) ──────────────────────────
+  const cellStyles = item.tableCellStyles ?? {};
+  const cellStyleKey = (rowId: string, colId: string) => `${rowId}:${colId}`;
+  const setCellStyle = (
+    rowId: string, colId: string,
+    patch: Partial<{ fontSize: number; bold: boolean; italic: boolean; color: string; imageSize: number; imageFit: "contain" | "cover" }>
+  ) => {
+    const key = cellStyleKey(rowId, colId);
+    const next = { ...cellStyles };
+    const merged = { ...next[key], ...patch };
+    // Drop keys explicitly cleared, and remove the entry entirely when empty
+    (Object.keys(merged) as (keyof typeof merged)[]).forEach(k => { if (merged[k] == null) delete merged[k]; });
+    if (Object.keys(merged).length === 0) delete next[key];
+    else next[key] = merged;
+    upd({ tableCellStyles: next });
+  };
+
+  // Cell context menu (right-click a cell → per-cell font / image size)
+  const [cellMenu, setCellMenu] = useState<{ rowId: string; colId: string; x: number; y: number } | null>(null);
 
   const deleteRow = (rowId: string) => updRows(rows.filter(r => r.id !== rowId));
 
@@ -7804,6 +7930,57 @@ function TableItem({ item, upd, collapsed, isFinished, boardId, boxId, extraCont
                           ><Plus size={10} /> Add option</button>
                         </div>
                       )}
+                      {col.type === "image" && (
+                        <div className="px-2 py-1.5 flex flex-col gap-1.5" onClick={e => e.stopPropagation()}>
+                          <div>
+                            <p className="mb-1 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+                              <span>Image height</span>
+                              <span className="tabular-nums">{col.imageSize ?? 44}px</span>
+                            </p>
+                            <input
+                              type="range" min={16} max={220} step={4}
+                              value={col.imageSize ?? 44}
+                              onChange={e => updCols(cols.map(c => c.id === col.id ? { ...c, imageSize: Number(e.target.value) } : c))}
+                              className="w-full accent-[var(--accent)]"
+                            />
+                          </div>
+                          <div>
+                            <p className="mb-1 text-[10px] text-[var(--text-muted)]">Fit</p>
+                            <div className="flex gap-1">
+                              {([["contain","Fit whole"],["cover","Crop square"]] as const).map(([val, label]) => (
+                                <button key={val}
+                                  onClick={e => { e.stopPropagation(); updCols(cols.map(c => c.id === col.id ? { ...c, imageFit: val } : c)); }}
+                                  className={cn("flex-1 rounded border px-1.5 py-1 text-[10px] transition-colors",
+                                    (col.imageFit ?? "contain") === val
+                                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10"
+                                      : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-overlay)]")}>
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {col.type !== "checkbox" && col.type !== "image" && (
+                        <div className="px-2 py-1.5" onClick={e => e.stopPropagation()}>
+                          <p className="mb-1 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+                            <span>Font size</span>
+                            <span className="tabular-nums">{col.fontSize ? `${col.fontSize}px` : "Default"}</span>
+                          </p>
+                          <input
+                            type="range" min={9} max={28} step={1}
+                            value={col.fontSize ?? fontSize}
+                            onChange={e => updCols(cols.map(c => c.id === col.id ? { ...c, fontSize: Number(e.target.value) } : c))}
+                            className="w-full accent-[var(--accent)]"
+                          />
+                          {col.fontSize != null && (
+                            <button
+                              onClick={e => { e.stopPropagation(); updCols(cols.map(c => c.id === col.id ? { ...c, fontSize: undefined } : c)); }}
+                              className="mt-0.5 text-[10px] text-[var(--accent)] hover:underline"
+                            >Reset to table default</button>
+                          )}
+                        </div>
+                      )}
                       {cols.length > 1 && (
                         <button onClick={() => { deleteCol(col.id); setColMenu(null); }}
                           className="flex w-full items-center gap-2 rounded px-2 py-1 text-[11px] text-red-400 hover:bg-red-500/10 transition-colors">
@@ -7857,12 +8034,21 @@ function TableItem({ item, upd, collapsed, isFinished, boardId, boxId, extraCont
                 <tr key={row.id} className="group/row" style={{ background: rowBg, height: rowH }}>
                   {cols.map((col, ci) => {
                     const ref = `${idxToColLetter(ci)}${ri + 1}`;
+                    const cs = cellStyles[cellStyleKey(row.id, col.id)];
                     return (
-                      <td key={col.id} title={ref} style={{ borderRight: cellBorder, borderBottom: cellBorder, paddingLeft: 8, paddingRight: 8, textAlign: col.type === "checkbox" ? "center" : undefined }}>
+                      <td key={col.id} title={ref}
+                        onContextMenu={cellsReadOnly ? undefined : (e) => { e.preventDefault(); e.stopPropagation(); setColMenu(null); setCellMenu({ rowId: row.id, colId: col.id, x: e.clientX, y: e.clientY }); }}
+                        style={{ borderRight: cellBorder, borderBottom: cellBorder, paddingLeft: 8, paddingRight: 8, textAlign: col.type === "checkbox" ? "center" : undefined }}>
                         <TableCell col={col} value={row.cells[col.id] ?? (col.type === "checkbox" ? false : "")}
                           key={`${row.id}:${col.id}:${String(row.cells[col.id] ?? '').startsWith('=') ? 'f' : 'v'}`}
                           onChange={v => setCell(row.id, col.id, v)} isFinished={cellsReadOnly}
-                          fontColor={fontColor} fontSize={fontSize} fontFamily={fontFamily}
+                          fontColor={cs?.color ?? fontColor} fontSize={cs?.fontSize ?? col.fontSize ?? fontSize} fontFamily={fontFamily}
+                          bold={cs?.bold} italic={cs?.italic}
+                          imageSize={cs?.imageSize} imageFit={cs?.imageFit}
+                          onResizeImage={(size, fitColW) => {
+                            setCellStyle(row.id, col.id, { imageSize: size });
+                            if (fitColW) updCols(cols.map(c => c.id === col.id ? { ...c, width: fitColW } : c));
+                          }}
                           cellKey={`${row.id}:${col.id}`}
                           onHTMLInput={(el) => handleCellHTMLChange(el)}
                           cols={cols} rows={rows}
@@ -8070,6 +8256,88 @@ function TableItem({ item, upd, collapsed, isFinished, boardId, boxId, extraCont
           onClose={() => setContextMenu(null)}
         />
       )}
+
+      {/* Per-cell formatting menu (right-click a cell) */}
+      {cellMenu && (() => {
+        const mcol = cols.find(c => c.id === cellMenu.colId);
+        if (!mcol) return null;
+        const mcs = cellStyles[cellStyleKey(cellMenu.rowId, cellMenu.colId)];
+        const isImg = mcol.type === "image";
+        const curFont = mcs?.fontSize ?? mcol.fontSize ?? fontSize;
+        const curSize = mcs?.imageSize ?? mcol.imageSize ?? 44;
+        const curFit = mcs?.imageFit ?? mcol.imageFit ?? "contain";
+        const curBold = mcs?.bold ?? false;
+        const curItalic = mcs?.italic ?? false;
+        const curColor = mcs?.color ?? (typeof fontColor === "string" && /^#/.test(fontColor) ? fontColor : "");
+        const hasOverride = !!mcs && Object.keys(mcs).length > 0;
+        const setCS = (p: Partial<{ fontSize: number; bold: boolean; italic: boolean; color: string; imageSize: number; imageFit: "contain" | "cover" }>) =>
+          setCellStyle(cellMenu.rowId, cellMenu.colId, p);
+        return (
+          <ContextMenu
+            x={cellMenu.x} y={cellMenu.y}
+            onClose={() => setCellMenu(null)}
+            items={[{
+              custom: (
+                <div className="w-52" onClick={e => e.stopPropagation()}>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    {isImg ? "This image" : "This cell"}
+                  </p>
+                  {isImg ? (
+                    <>
+                      <div className="mb-2">
+                        <p className="mb-1 flex justify-between text-[10px] text-[var(--text-muted)]"><span>Size</span><span className="tabular-nums">{curSize}px</span></p>
+                        <input type="range" min={16} max={400} step={4} value={curSize}
+                          onChange={e => setCS({ imageSize: Number(e.target.value) })}
+                          className="w-full accent-[var(--accent)]" />
+                      </div>
+                      <div className="flex gap-1">
+                        {([["contain","Fit whole"],["cover","Crop square"]] as const).map(([v,l]) => (
+                          <button key={v} onClick={() => setCS({ imageFit: v })}
+                            className={cn("flex-1 rounded border px-1.5 py-1 text-[10px] transition-colors",
+                              curFit === v ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-overlay)]")}>{l}</button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <p className="mb-1 flex justify-between text-[10px] text-[var(--text-muted)]"><span>Font size</span><span className="tabular-nums">{curFont}px</span></p>
+                      <input type="range" min={9} max={40} step={1} value={curFont}
+                        onChange={e => setCS({ fontSize: Number(e.target.value) })}
+                        className="w-full accent-[var(--accent)]" />
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <button
+                          onClick={() => setCS({ bold: curBold ? undefined : true })}
+                          className={cn("h-6 w-7 rounded border text-[12px] font-bold transition-colors",
+                            curBold ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-overlay)]")}
+                          title="Bold">B</button>
+                        <button
+                          onClick={() => setCS({ italic: curItalic ? undefined : true })}
+                          className={cn("h-6 w-7 rounded border text-[12px] italic transition-colors",
+                            curItalic ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-overlay)]")}
+                          title="Italic">I</button>
+                        <label className="ml-1 flex items-center gap-1 cursor-pointer" title="Text color">
+                          <input type="color" value={curColor || "#e6e6e6"}
+                            onChange={e => setCS({ color: e.target.value })}
+                            className="h-6 w-6 cursor-pointer rounded border border-[var(--border)] bg-transparent p-0" />
+                          {mcs?.color && (
+                            <button onClick={() => setCS({ color: undefined })} className="text-[var(--text-muted)] hover:text-red-400" title="Clear color"><XIcon size={11} /></button>
+                          )}
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                  {hasOverride && (
+                    <button
+                      onClick={() => { const next = { ...cellStyles }; delete next[cellStyleKey(cellMenu.rowId, cellMenu.colId)]; upd({ tableCellStyles: next }); setCellMenu(null); }}
+                      className="mt-2 text-[10px] text-[var(--accent)] hover:underline"
+                    >Reset to column default</button>
+                  )}
+                </div>
+              ),
+            }]}
+          />
+        );
+      })()}
     </div>
   );
 }

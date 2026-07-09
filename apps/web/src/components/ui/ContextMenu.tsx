@@ -6,13 +6,15 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ContextMenuItem {
-  label: string;
+  label?: string;
   icon?: React.ReactNode;
   shortcut?: string;
   onClick?: () => void;
   danger?: boolean;
   disabled?: boolean;
   children?: ContextMenuItem[];
+  /** Arbitrary row content rendered instead of the standard button (e.g. sliders) */
+  custom?: React.ReactNode;
 }
 
 export type ContextMenuEntry = ContextMenuItem | "separator";
@@ -195,6 +197,8 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
       {items.map((item, i) =>
         item === "separator" ? (
           <div key={i} className="my-1 border-t border-[var(--border)]" />
+        ) : item.custom ? (
+          <div key={i} className="px-3 py-1.5">{item.custom}</div>
         ) : (
           <MenuRow key={i} item={item} onClose={onClose} />
         )

@@ -40,19 +40,6 @@ Prefer a native app? The **desktop app** (Windows) adds a system tray, a global 
 
 ---
 
-## Monorepo layout
-
-```
-apps/
-  web/        Next.js web app (crecoard.com)
-  desktop/    Electron thin shell + native integrations
-packages/     Shared code
-supabase/
-  migrations/ Postgres schema, RLS policies, and RPC functions
-```
-
----
-
 ## Running locally
 
 Requires **Node 20+** and a free [Supabase](https://supabase.com) project.
