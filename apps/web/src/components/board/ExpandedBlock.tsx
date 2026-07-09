@@ -12,11 +12,12 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   X, Pin, Grid3X3, Upload, AlignLeft, AlignCenter, AlignRight, Trash2,
   CopyPlus, ArrowUp, ArrowDown, RefreshCw, LayoutGrid, Minus, Plus,
-  Lock, LockOpen, Eye, EyeOff, ShieldCheck, SlidersHorizontal,
+  Lock, LockOpen, Eye, EyeOff, ShieldCheck, SlidersHorizontal, Archive,
+  Loader2, Check,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
-  useBoardStore, useActiveBoard,
+  useBoardStore, useActiveBoard, suppressUndo,
   BlockItem, Box, ItemType, BoxStyle, isContributableType,
 } from "@/store/boardStore";
 import { useCanEditBoard, useServerBoard, useServerBoardData, roleAllowed } from "@/contexts/ServerBoardContext";
@@ -28,6 +29,8 @@ import { FlashcardStylePanel, QuizStylePanel } from "@/components/items/StudyIte
 import { VisualizerStylePanel } from "@/components/items/VisualizerItem";
 import { TwitchStylePanel } from "@/components/items/TwitchItem";
 import { FontPicker } from "@/components/ui/FontPicker";
+import { saveBlockArchive } from "@/lib/blockArchive";
+import { captureBoxImage } from "@/lib/boardImage";
 import { loadGoogleFont } from "@/lib/fonts";
 import { ITEM_DEFINITIONS } from "./ItemPalette";
 import { WallpaperEditor } from "@/components/ui/WallpaperEditor";
@@ -40,7 +43,7 @@ const snap = (v: number) => Math.round(v / GRID) * GRID;
 const MIN_W = 180;
 const MIN_H = 60;
 
-const DEFAULT_SIZES: Record<ItemType, { w: number; h: number }> = {
+export const DEFAULT_SIZES: Record<ItemType, { w: number; h: number }> = {
   text:     { w: 320, h: 100 },
   list:     { w: 300, h: 200 },
   embed:    { w: 420, h: 260 },
@@ -66,7 +69,7 @@ const DEFAULT_SIZES: Record<ItemType, { w: number; h: number }> = {
   visualizer:   { w: 420, h: 300 },
 };
 
-function getDefaultLayout(item: BlockItem, idx: number) {
+export function getDefaultLayout(item: BlockItem, idx: number) {
   const sz = DEFAULT_SIZES[item.type] ?? { w: 280, h: 120 };
   const col = idx % 2;
   const row = Math.floor(idx / 2);
@@ -379,6 +382,8 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
   const isMobile = useIsMobile();
   // Mobile: the editor panel is a bottom sheet instead of a side column.
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  // Header archive button: idle → saving (capture runs) → saved (visible confirmation)
+  const [archiveState, setArchiveState] = useState<"idle" | "saving" | "saved">("idle");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [canvasCtxMenu, setCanvasCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -414,6 +419,24 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
     prevFocusRef.current = document.activeElement as HTMLElement;
     return () => { prevFocusRef.current?.focus(); };
   }, []);
+
+  // Template-edit mode: leaving the editor by ANY path (X, backdrop, switching
+  // blocks) commits the template — the forgiving default, matching how every
+  // other edit in the app autosaves. Explicit discard is the banner's button.
+  // The commit is deferred one tick: StrictMode's dev double-mount runs this
+  // cleanup immediately on open, and committing then would clear the stash and
+  // silently exit template mode. After the delay, expandedBoxId distinguishes a
+  // real close from a StrictMode remount.
+  useEffect(() => {
+    return () => {
+      window.setTimeout(() => {
+        const st = useBoardStore.getState();
+        if (st.expandedBoxId === boxId) return; // editor still open — not a real close
+        const b = (st.boards.find((x) => x.id === boardId) ?? st.serverBoards[boardId])?.boxes.find((x) => x.id === boxId);
+        if (b?.templateEditStash) suppressUndo(() => st.endTemplateEdit(boardId, boxId, true));
+      }, 80);
+    };
+  }, [boardId, boxId]);
 
   if (!box) return null;
 
@@ -616,6 +639,48 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
             >
               <Grid3X3 size={15} />
             </button>
+            {canEdit && !box.templateEditStash && (
+              <button
+                disabled={archiveState === "saving"}
+                onClick={() => {
+                  if (archiveState !== "idle") return;
+                  setArchiveState("saving");
+                  void (async () => {
+                    // Capture this expanded view — the highest-fidelity archive picture
+                    const img = (await captureBoxImage(boardId, boxId)) ?? undefined;
+                    const res = await saveBlockArchive({
+                      boardId, boxId, title: box.title,
+                      periodStart: null, periodEnd: null,
+                      kind: "manual", pinned: true, items: box.items,
+                    }, img);
+                    if (!res.ok) {
+                      setArchiveState("idle");
+                      if (res.reason === "limit")
+                        window.alert("Archive limit reached for this block — delete or export old snapshots first.");
+                      return;
+                    }
+                    setArchiveState("saved");
+                    setTimeout(() => setArchiveState("idle"), 1800);
+                  })();
+                }}
+                className={cn(
+                  "hidden items-center gap-1.5 rounded p-1.5 transition-colors sm:flex",
+                  archiveState === "saved"
+                    ? "text-[var(--accent)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                )}
+                title="Save a snapshot (contents + picture) to the block archive"
+              >
+                {archiveState === "saving" ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : archiveState === "saved" ? (
+                  <Check size={15} />
+                ) : (
+                  <Archive size={15} />
+                )}
+                {archiveState === "saved" && <span className="text-[11px] font-semibold">Saved</span>}
+              </button>
+            )}
             {canEdit && (
               <button onClick={() => setMobilePanelOpen(true)} title="Editor" className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-overlay)] hover:text-[var(--text-primary)] transition-colors md:hidden">
                 <SlidersHorizontal size={17} />
@@ -625,6 +690,31 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
               <X size={18} />
             </button>
           </div>
+
+          {/* Template-edit banner — box.items currently hold the recurrence template */}
+          {box.templateEditStash && (
+            <div className="flex flex-shrink-0 items-center gap-3 border-b border-[var(--accent)]/40 bg-[var(--accent)]/10 px-5 py-2">
+              <RefreshCw size={13} className="shrink-0 text-[var(--accent)]" />
+              <p className="min-w-0 flex-1 text-[12px] text-[var(--text-secondary)]">
+                <span className="font-semibold text-[var(--accent)]">Editing template</span>
+                {" — this is what the block resets to each "}
+                {box.recurrence ? { daily: "day", weekly: "week", monthly: "month" }[box.recurrence.freq] : "period"}
+                {", not its current contents. Closing saves the template."}
+              </p>
+              <button
+                onClick={() => { suppressUndo(() => useBoardStore.getState().endTemplateEdit(boardId, boxId, false)); close(); }}
+                className="shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-overlay)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                Discard changes
+              </button>
+              <button
+                onClick={() => { suppressUndo(() => useBoardStore.getState().endTemplateEdit(boardId, boxId, true)); close(); }}
+                className="shrink-0 rounded-lg bg-[var(--accent)] px-2.5 py-1 text-[12px] font-semibold text-white hover:opacity-90 transition-opacity"
+              >
+                Save template
+              </button>
+            </div>
+          )}
 
           {/* Canvas */}
           <div
@@ -637,6 +727,7 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
               <DndContext id="dnd-expanded-block" sensors={sensors} onDragEnd={handleDragEnd}>
                 <div
                   ref={canvasRef}
+                  data-expanded-canvas
                   className={cn("absolute", showGrid && "board-grid")}
                   style={{
                     left: 0,
