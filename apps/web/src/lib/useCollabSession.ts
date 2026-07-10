@@ -18,6 +18,7 @@ import {
   subscribeToBoardOps,
 } from "./collaboration";
 import { applyBoardOp } from "./boardOps";
+import { setBroadcastSink } from "@/store/boardStore";
 
 // ─── Context type ─────────────────────────────────────────────────────────────
 
@@ -75,16 +76,19 @@ export function useCollabSessionSetup(boardId: string, enabled: boolean): Collab
     let unsubCursors: (() => void) | null = null;
     let unsubBoardOps: (() => void) | null = null;
 
-    joinRoom(boardId).then(({ channel }) => {
-      if (!mounted) { void leaveRoom(channel); return; }
-      channelRef.current = channel;
-      setIsConnected(true);
+    // Attach all listeners BEFORE the channel subscribes (inside joinRoom) so
+    // realtime reliably delivers cursor + board-op broadcasts to them.
+    joinRoom(boardId, (channel) => {
       unsubPresence = subscribeToPresence(channel, setMembers);
       unsubCursors = subscribeToCursors(channel, setCursors);
       unsubBoardOps = subscribeToBoardOps(channel, (op) => {
         if (op.senderId === getSelfIdentity().userId) return;
         applyBoardOp(op);
       });
+    }).then(({ channel }) => {
+      if (!mounted) { void leaveRoom(channel); return; }
+      channelRef.current = channel;
+      setIsConnected(true);
     }).catch(() => {
       // Supabase not configured or connection failed — collab stays disabled
     });
@@ -101,6 +105,26 @@ export function useCollabSessionSetup(boardId: string, enabled: boolean): Collab
       setCursors([]);
     };
   }, [enabled, boardId]);
+
+  // Route store-level edits (item content, loose-item moves/resizes) through the
+  // same realtime channel so they sync live instead of only on refresh.
+  useEffect(() => {
+    if (!enabled) { setBroadcastSink(null); return; }
+    setBroadcastSink((op) => {
+      if (!channelRef.current) return;
+      void broadcastBoardOp(channelRef.current, { ...op, senderId: getSelfIdentity().userId } as BoardOp).catch(() => {});
+    });
+    return () => setBroadcastSink(null);
+  }, [enabled]);
+
+  // Drop cursors for anyone no longer present so stale pointers don't linger.
+  useEffect(() => {
+    const present = new Set(members.map((m) => m.userId));
+    setCursors((cs) => {
+      const next = cs.filter((c) => present.has(c.userId));
+      return next.length === cs.length ? cs : next;
+    });
+  }, [members]);
 
   const onCursorMove = useCallback((x: number, y: number) => {
     if (!channelRef.current || !enabled) return;

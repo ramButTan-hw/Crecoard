@@ -152,13 +152,19 @@ export function updateSelfIdentity(patch: Partial<Omit<SelfIdentity, "userId">>)
  * object — never call supabase.channel() again for the same board.
  */
 export async function joinRoom(
-  boardId: string
+  boardId: string,
+  // Register every broadcast/presence listener on the channel. Supabase only
+  // reliably delivers events to bindings that exist BEFORE subscribe() is called,
+  // so listeners must be attached here — not after joinRoom resolves.
+  bind?: (channel: RealtimeChannel) => void,
 ): Promise<{ boardId: string; channel: RealtimeChannel }> {
   const { userId, displayName, color } = getSelfIdentity();
 
   const channel = supabase.channel(`room:${boardId}`, {
     config: { presence: { key: userId } },
   });
+
+  bind?.(channel);
 
   await new Promise<void>((resolve) => {
     // Presence tracking requires SUBSCRIBED status before track() can be called

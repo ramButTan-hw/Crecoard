@@ -80,5 +80,17 @@ function applyBoardOpInner(op: BoardOp): void {
     case "removeBoardItem":
       store.removeBoardItem(boardId, op.itemId as string);
       break;
+
+    case "updateBoardItem":
+      store.updateBoardItem(boardId, op.itemId as string, op.patch as Parameters<typeof store.updateBoardItem>[2]);
+      break;
+
+    case "moveBoardItem":
+      store.moveBoardItem(boardId, op.itemId as string, op.x as number, op.y as number);
+      break;
+
+    case "resizeBoardItem":
+      store.resizeBoardItem(boardId, op.itemId as string, op.w as number, op.h as number);
+      break;
   }
 }

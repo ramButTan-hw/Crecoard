@@ -33,6 +33,23 @@ export function suppressUndo<T>(fn: () => T): T {
   try { return fn(); } finally { undoSuppressed = false; }
 }
 
+// ─── Collab broadcast sink ────────────────────────────────────────────────────
+// Content edits (item text/data, loose canvas-item moves) go through the store,
+// not through components that call broadcastOp — so without this they'd only
+// persist and appear to peers after a refresh. useCollabSession registers a sink
+// here; store mutations emit ops through it for live sync. Broadcasts only fire
+// for genuine USER actions: programmatic writers (remote ops, session sync,
+// heals, undo) already run inside suppressUndo, so gating on !undoSuppressed both
+// prevents echo loops and avoids re-broadcasting a peer's incoming change.
+type CollabOp = { op: string; boardId: string } & Record<string, unknown>;
+let broadcastSink: ((op: CollabOp) => void) | null = null;
+export function setBroadcastSink(fn: ((op: CollabOp) => void) | null): void {
+  broadcastSink = fn;
+}
+function emitOp(op: CollabOp): void {
+  if (broadcastSink && !undoSuppressed) broadcastSink(op);
+}
+
 export interface ItemPerms {
   edit?: string[];       // ServerRole IDs that can change settings/style
   input?: string[];      // ServerRole IDs that can type/enter text
@@ -1812,18 +1829,22 @@ export const useBoardStore = create<BoardState>()(
         box.items.push({ ...rest, id: forcedId ?? nanoid() } as BlockItem);
       }),
 
-    removeItem: (boardId, boxId, itemId) =>
+    removeItem: (boardId, boxId, itemId) => {
       set((s) => {
         const box = findBox(s, boardId, boxId);
         if (box) box.items = box.items.filter((i) => i.id !== itemId);
-      }),
+      });
+      emitOp({ op: "removeItem", boardId, boxId, itemId });
+    },
 
-    updateItem: (boardId, boxId, itemId, patch) =>
+    updateItem: (boardId, boxId, itemId, patch) => {
       set((s) => {
         const box = findBox(s, boardId, boxId);
         const item = box?.items.find((i) => i.id === itemId);
         if (item) Object.assign(item, patch);
-      }),
+      });
+      emitOp({ op: "updateItem", boardId, boxId, itemId, patch });
+    },
 
     replaceBoxItems: (boardId, boxId, items) =>
       set((s) => {
@@ -1940,25 +1961,32 @@ export const useBoardStore = create<BoardState>()(
         board.boardItems = (board.boardItems ?? []).filter((i) => i.id !== itemId);
         if (s.selectedBoardItemId === itemId) s.selectedBoardItemId = null;
       });
+      emitOp({ op: "removeBoardItem", boardId, itemId });
     },
 
-    updateBoardItem: (boardId, itemId, patch) =>
+    updateBoardItem: (boardId, itemId, patch) => {
       set((s) => {
         const item = findBoardAny(s, boardId)?.boardItems?.find((i) => i.id === itemId);
         if (item) Object.assign(item, patch);
-      }),
+      });
+      emitOp({ op: "updateBoardItem", boardId, itemId, patch });
+    },
 
-    moveBoardItem: (boardId, itemId, x, y) =>
+    moveBoardItem: (boardId, itemId, x, y) => {
       set((s) => {
         const item = findBoardAny(s, boardId)?.boardItems?.find((i) => i.id === itemId);
         if (item) { item.boardX = x; item.boardY = y; }
-      }),
+      });
+      emitOp({ op: "moveBoardItem", boardId, itemId, x, y });
+    },
 
-    resizeBoardItem: (boardId, itemId, w, h) =>
+    resizeBoardItem: (boardId, itemId, w, h) => {
       set((s) => {
         const item = findBoardAny(s, boardId)?.boardItems?.find((i) => i.id === itemId);
         if (item) { item.boardW = w; item.boardH = h; }
-      }),
+      });
+      emitOp({ op: "resizeBoardItem", boardId, itemId, w, h });
+    },
 
     bringBoardItemToFront: (boardId, itemId, explicit = false) =>
       set((s) => {

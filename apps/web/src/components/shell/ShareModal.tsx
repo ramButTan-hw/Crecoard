@@ -8,7 +8,7 @@ import {
 import { useBoardStore, useActiveBoard } from "@/store/boardStore";
 import { useCollab } from "@/lib/useCollabSession";
 import { supabase } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 
 interface Props {
   onClose: () => void;
@@ -125,9 +125,14 @@ export function ShareModal({ onClose }: Props) {
 
   const copyLink = async () => {
     if (!shareUrl) return;
-    await navigator.clipboard.writeText(shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyToClipboard(shareUrl);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      // Last resort so the link is never a dead end — select it for manual copy.
+      window.prompt("Copy this link:", shareUrl);
+    }
   };
 
   const saveName = () => {
