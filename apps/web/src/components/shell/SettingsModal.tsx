@@ -5,8 +5,11 @@ import { createPortal } from "react-dom";
 import {
   X, User, Bell, Mail, Shield, Palette, Accessibility, Keyboard,
   Info, ChevronRight, Check, Plus, Trash2, Volume2, VolumeX,
-  Eye, EyeOff, MessageSquare, AtSign, Globe, Zap, Monitor, RotateCcw, Gamepad2, Download, Compass,
+  Eye, EyeOff, MessageSquare, AtSign, Globe, Zap, Monitor, RotateCcw, Gamepad2, Download, Compass, ExternalLink,
 } from "lucide-react";
+import { LINKS, isExternalLink } from "@/lib/links";
+import { applyAccessibility } from "@/lib/accessibility";
+import { publishPrivacyToProfile } from "@/lib/privacy";
 import { replayFirstRunTour } from "./FirstRunTour";
 import { cn } from "@/lib/utils";
 import { getSelfIdentity, updateSelfIdentity } from "@/lib/collaboration";
@@ -20,55 +23,9 @@ import { appToast } from "@/components/ui/AppToast";
 import { PRESET_THEMES, APP_FONTS, BG_FILTERS, ThemeVarMap } from "@/lib/appThemes";
 
 // ── Local-storage settings key ─────────────────────────────────────────────
-const PREF_KEY = "plancraft-user-prefs";
+import { UserPrefs, DEFAULT_PREFS, readUserPrefs as loadPrefs, writeUserPrefs as savePrefs } from "@/lib/userPrefs";
 // Installer URL (Vercel env). Empty until the desktop app is published.
 const DESKTOP_DOWNLOAD_URL = process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL ?? "";
-
-interface UserPrefs {
-  // Notifications
-  notifyMentions: boolean;
-  notifyDMs: boolean;
-  notifySounds: boolean;
-  notifyDesktop: boolean;
-  notifyBadge: boolean;
-  notifyLevel: "all" | "mentions" | "none";
-  // Privacy
-  showOnlineStatus: boolean;
-  showReadReceipts: boolean;
-  allowDMsFrom: "everyone" | "friends" | "none";
-  allowFriendRequests: boolean;
-  // Accessibility
-  reduceMotion: boolean;
-  compactMode: boolean;
-  fontSize: "sm" | "md" | "lg";
-  highContrast: boolean;
-}
-
-const DEFAULT_PREFS: UserPrefs = {
-  notifyMentions: true,
-  notifyDMs: true,
-  notifySounds: true,
-  notifyDesktop: false,
-  notifyBadge: true,
-  notifyLevel: "mentions",
-  showOnlineStatus: true,
-  showReadReceipts: true,
-  allowDMsFrom: "everyone",
-  allowFriendRequests: true,
-  reduceMotion: false,
-  compactMode: false,
-  fontSize: "md",
-  highContrast: false,
-};
-
-function loadPrefs(): UserPrefs {
-  if (typeof window === "undefined") return DEFAULT_PREFS;
-  try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}") }; }
-  catch { return DEFAULT_PREFS; }
-}
-function savePrefs(p: UserPrefs) {
-  if (typeof window !== "undefined") localStorage.setItem(PREF_KEY, JSON.stringify(p));
-}
 
 // ── Section definitions ────────────────────────────────────────────────────
 type SectionId = "account" | "notifications" | "privacy" | "appearance" | "accessibility" | "keybindings" | "about" | "data" | "integrations";
@@ -164,8 +121,16 @@ export function SettingsModal({ onClose, initialSection = "account" }: SettingsM
 
   const identity = getSelfIdentity();
 
-  // Persist prefs on change
-  useEffect(() => { savePrefs(prefs); }, [prefs]);
+  // Persist prefs on change, and apply the accessibility ones live
+  useEffect(() => { savePrefs(prefs); applyAccessibility(prefs); }, [prefs]);
+
+  // Mirror the privacy prefs others must see (who-can-DM, friend requests) onto
+  // the profile row so other clients respect them; skip the first render.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return; }
+    void publishPrivacyToProfile({ allowDMsFrom: prefs.allowDMsFrom, allowFriendRequests: prefs.allowFriendRequests });
+  }, [prefs.allowDMsFrom, prefs.allowFriendRequests]);
 
   const patchPref = <K extends keyof UserPrefs>(key: K, value: UserPrefs[K]) => {
     if (key === "notifySounds") setSoundEnabled(value as boolean);
@@ -445,7 +410,7 @@ export function SettingsModal({ onClose, initialSection = "account" }: SettingsM
                 <div className="flex flex-col gap-6">
                   <SGroup label="Presence">
                     <Toggle label="Show online status" desc="Let others see when you're active" icon={<Globe size={14} />} value={prefs.showOnlineStatus} onChange={(v) => patchPref("showOnlineStatus", v)} />
-                    <Toggle label="Read receipts" desc="Show when you've read messages" icon={prefs.showReadReceipts ? <Eye size={14} /> : <EyeOff size={14} />} value={prefs.showReadReceipts} onChange={(v) => patchPref("showReadReceipts", v)} />
+                    <Toggle label="Read receipts" desc="Show when you've read messages (available once read receipts ship)" icon={prefs.showReadReceipts ? <Eye size={14} /> : <EyeOff size={14} />} value={prefs.showReadReceipts} onChange={(v) => patchPref("showReadReceipts", v)} />
                   </SGroup>
 
                   <SGroup label="Direct Messages">
@@ -674,6 +639,30 @@ export function SettingsModal({ onClose, initialSection = "account" }: SettingsM
                   <SGroup label="Display">
                     <Toggle label="Compact mode" desc="Reduce spacing and padding for a denser layout" icon={<Monitor size={14} />} value={prefs.compactMode} onChange={(v) => patchPref("compactMode", v)} />
                     <Toggle label="High contrast" desc="Increase color contrast for better readability" icon={<Eye size={14} />} value={prefs.highContrast} onChange={(v) => patchPref("highContrast", v)} />
+                    <Toggle label="Reduce transparency" desc="Remove frosted-glass blur so text sits on solid surfaces" icon={<EyeOff size={14} />} value={prefs.reduceTransparency} onChange={(v) => patchPref("reduceTransparency", v)} />
+                  </SGroup>
+
+                  <SGroup label="Color">
+                    <div className="rounded-xl border border-[var(--border)] px-4 py-3" style={{ background: "var(--surface)" }}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-sm text-[var(--text-primary)]">Saturation</span>
+                        <span className="text-xs tabular-nums text-[var(--text-muted)]">{prefs.saturation}%</span>
+                      </div>
+                      <input
+                        type="range" min={20} max={100} step={5}
+                        value={prefs.saturation}
+                        onChange={(e) => patchPref("saturation", Number(e.target.value))}
+                        className="w-full accent-[var(--accent)]"
+                      />
+                      <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                        Lower saturation softens the interface colors — helpful for visual sensitivity or color-vision differences.
+                      </p>
+                    </div>
+                  </SGroup>
+
+                  <SGroup label="Navigation & Reading">
+                    <Toggle label="Underline links" desc="Always underline links so they don't rely on color alone" icon={<Globe size={14} />} value={prefs.underlineLinks} onChange={(v) => patchPref("underlineLinks", v)} />
+                    <Toggle label="Always show focus outline" desc="Keep a visible outline on the focused control, not just when tabbing" icon={<Keyboard size={14} />} value={prefs.alwaysShowFocus} onChange={(v) => patchPref("alwaysShowFocus", v)} />
                   </SGroup>
 
                   <SGroup label="Text Size">
@@ -694,7 +683,7 @@ export function SettingsModal({ onClose, initialSection = "account" }: SettingsM
                       ))}
                     </div>
                     <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
-                      Affects message and sidebar text throughout the app.
+                      Scales the app interface — menus, sidebars, and messages. Board content keeps its own sizes.
                     </p>
                   </SGroup>
                 </div>
@@ -786,20 +775,23 @@ export function SettingsModal({ onClose, initialSection = "account" }: SettingsM
                   <SGroup label="Links">
                     <div className="flex flex-col gap-1.5">
                       {[
-                        { label: "Documentation", href: "#" },
-                        { label: "Report a bug", href: "#" },
-                        { label: "Privacy Policy", href: "#" },
-                        { label: "Terms of Service", href: "#" },
-                      ].map(({ label, href }) => (
-                        <a
-                          key={label}
-                          href={href}
-                          className="flex items-center justify-between rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                          style={{ background: "var(--surface)" }}
-                        >
-                          {label} <ChevronRight size={13} />
-                        </a>
-                      ))}
+                        { label: "Documentation", href: LINKS.docs },
+                        { label: "Report a bug", href: LINKS.reportBug },
+                        // Privacy Policy & Terms of Service hidden until the pages are finalized
+                      ].map(({ label, href }) => {
+                        const external = isExternalLink(href);
+                        return (
+                          <a
+                            key={label}
+                            href={href}
+                            {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                            className="flex items-center justify-between rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                            style={{ background: "var(--surface)" }}
+                          >
+                            {label} {external ? <ExternalLink size={13} /> : <ChevronRight size={13} />}
+                          </a>
+                        );
+                      })}
                     </div>
                   </SGroup>
                 </div>

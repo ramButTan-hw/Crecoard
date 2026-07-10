@@ -6,6 +6,8 @@ import {
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { useUser } from "@/contexts/UserContext";
+import { canDM } from "@/lib/privacy";
+import { appToast } from "@/components/ui/AppToast";
 
 function isSupabaseReady(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -88,7 +90,16 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
       .eq("user_b", userB)
       .maybeSingle();
 
-    if (existing) return existing.id as string;
+    if (existing) return existing.id as string; // already talking — privacy change doesn't close it
+
+    // Respect the recipient's "who can message me" setting (RLS enforces it too)
+    const check = await canDM(otherUserId);
+    if (!check.ok) {
+      appToast(check.reason === "friends"
+        ? "You can only message this user if you're friends."
+        : "This user isn't accepting messages.");
+      return null;
+    }
 
     const { data: created, error } = await supabase
       .from("dm_conversations")
@@ -96,7 +107,11 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
       .select("id")
       .single();
 
-    if (error || !created) { console.error("[Messaging] openConversation failed:", error); return null; }
+    if (error || !created) {
+      if (error?.code === "42501") appToast("This user isn't accepting messages.");
+      else console.error("[Messaging] openConversation failed:", error);
+      return null;
+    }
     return created.id as string;
   }, []);
 

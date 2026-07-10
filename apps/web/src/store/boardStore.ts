@@ -523,6 +523,29 @@ export interface BlockItem {
   timerFormat24h?: boolean;
   timerShowSeconds?: boolean;
   timerShowDate?: boolean;
+  // timer — clock date customization
+  timerDateFontFamily?: string;
+  timerDateFontSize?: number;
+  timerDateBold?: boolean;
+  timerDateColor?: string;
+  timerDateShowWeekday?: boolean;   // default true
+  timerDateShowYear?: boolean;
+  timerDatePosition?: "above" | "below"; // relative to the time (default below)
+  // timer — analog clock face (clock mode)
+  timerClockFace?: "digital" | "analog";
+  timerClockBgImage?: string;
+  timerClockBgImageSize?: "cover" | "contain";
+  timerHandStyle?: "line" | "bar" | "tapered" | "arrow" | "minimal";
+  timerHandColor?: string;
+  timerSecondHandColor?: string;
+  timerShowSecondHand?: boolean;    // default true
+  timerShowClockTicks?: boolean;    // hour/minute tick marks
+  timerHourHandImage?: string;      // optional per-hand images (override the shape)
+  timerMinuteHandImage?: string;
+  timerSecondHandImage?: string;
+  timerHandImageSize?: number;      // scale for imported hand images, percent (default 100)
+  // timer — stopwatch
+  timerStopwatchTargetSecs?: number; // optional goal — gives the progress indicator meaning
   // timer — pomodoro cycle
   timerPomodoroEnabled?: boolean;
   timerPomodoroWorkSecs?: number;

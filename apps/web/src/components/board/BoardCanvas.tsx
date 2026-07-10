@@ -664,11 +664,49 @@ export function BoardCanvas() {
         }
         return;
       }
+
+      // N → new block at the viewport center (promised by the keybindings list)
+      if (!isEditable && !ctrl && (e.key === "n" || e.key === "N")) {
+        if (!canEditBoard || isFinished) return;
+        e.preventDefault();
+        const state = useBoardStore.getState();
+        const rect = viewportRef.current?.getBoundingClientRect();
+        const cx = ((rect ? rect.width / 2 : 600) - state.panOffset.x) / state.zoom;
+        const cy = ((rect ? rect.height / 2 : 400) - state.panOffset.y) / state.zoom;
+        const boxData = {
+          x: Math.max(0, Math.round(cx / 20) * 20 - 140),
+          y: Math.max(0, Math.round(cy / 20) * 20 - 110),
+          width: 280, height: 220,
+          locked: false, title: "New block",
+          isExpanded: false, items: [],
+          style: { ...DEFAULT_BOX_STYLE },
+        };
+        const newBoxId = addBox(boardId, boxData);
+        broadcastOp({ op: "addBox", boardId, boxId: newBoxId, box: boxData });
+        return;
+      }
+
+      // Enter → expand the selected block
+      if (!isEditable && e.key === "Enter") {
+        const state = useBoardStore.getState();
+        if (state.selectedBoxId && !state.expandedBoxId) {
+          e.preventDefault();
+          setExpandedBox(state.selectedBoxId);
+        }
+        return;
+      }
+
+      // G → toggle grid
+      if (!isEditable && !ctrl && (e.key === "g" || e.key === "G")) {
+        e.preventDefault();
+        toggleGrid();
+        return;
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [boardId, removeBox, duplicateBox, setExpandedBox, setZoom, setPanOffset, canEditBoard, broadcastOp]);
+  }, [boardId, removeBox, duplicateBox, setExpandedBox, setZoom, setPanOffset, canEditBoard, broadcastOp, addBox, toggleGrid, isFinished]);
 
   if (!board) {
     // Board content is on its way (server board being fetched) — ghost layout
@@ -702,7 +740,7 @@ export function BoardCanvas() {
     {
       label: "Add block here",
       icon: <SquarePlus size={14} />,
-      shortcut: "A",
+      shortcut: "N",
       onClick: () => {
         if (!boardCtx) return;
         const boxData = {

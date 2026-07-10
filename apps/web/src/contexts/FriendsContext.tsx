@@ -4,6 +4,7 @@ import {
   createContext, useCallback, useContext, useEffect, useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { canFriendRequest } from "@/lib/privacy";
 
 function isSupabaseReady(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -35,6 +36,7 @@ export type SendResult =
   | "already_friends"
   | "already_pending"
   | "self"
+  | "blocked"
   | "error";
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -207,13 +209,20 @@ export function FriendsProvider({ children }: { children: React.ReactNode }) {
       return "already_pending";
     }
 
+    // Respect the target's "allow friend requests" setting (RLS also enforces this)
+    if (!(await canFriendRequest(targetUserId))) return "blocked";
+
     const { data, error } = await supabase
       .from("friendships")
       .insert({ requester_id: user.id, addressee_id: targetUserId })
       .select()
       .single();
 
-    if (error || !data) return "error";
+    if (error || !data) {
+      // RLS rejects the insert when the addressee disallows requests
+      if (error?.code === "42501") return "blocked";
+      return "error";
+    }
 
     // Fetch the target's profile for optimistic state
     const { data: p } = await supabase

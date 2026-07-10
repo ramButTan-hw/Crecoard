@@ -36,6 +36,9 @@ import { PlayerHost } from "@/components/player/PlayerHost";
 import { CommandPalette, type PaletteCommand } from "@/components/ui/CommandPalette";
 import { AppToaster, appToast } from "@/components/ui/AppToast";
 import { getSelfIdentity } from "@/lib/collaboration";
+import { supabase } from "@/lib/supabase";
+import { playPing } from "@/lib/sound";
+import { readUserPrefs } from "@/lib/userPrefs";
 import { logServerAction } from "@/lib/serverAudit";
 import { ServerBoardContext } from "@/contexts/ServerBoardContext";
 import { UserProvider, useUser } from "@/contexts/UserContext";
@@ -69,7 +72,7 @@ function AppShellInner() {
   // boardId of the currently-active server (real or mock); avoids re-querying MOCK_SERVERS in hot paths
   const [activeServerBoardId, setActiveServerBoardId] = useState<string | null>(null);
   const [openDmIds, setOpenDmIds] = useState<string[]>([]);
-  const dmInfoRef = useRef<Record<string, { username: string; online: boolean; avatarUrl?: string }>>({});
+  const dmInfoRef = useRef<Record<string, { username: string; online: boolean; avatarUrl?: string; userId?: string }>>({});
   const [showChatDrawer, setShowChatDrawer] = useState(false);
   const { unread } = useNotifications();
   const [showMembers, setShowMembers] = useState(false);
@@ -199,12 +202,16 @@ function AppShellInner() {
     return () => window.removeEventListener("crecoard:open-templates", handler);
   }, []);
 
-  // ⌘K command palette
+  // ⌘K command palette · ⌘, settings (both promised by the keybindings list)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCmdOpen((v) => !v);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setShowUserSettings(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -665,10 +672,49 @@ function AppShellInner() {
     setActiveView(v);
   };
 
-  const handleDmSelect = (dmId: string, username?: string, online?: boolean, avatarUrl?: string) => {
-    if (username) dmInfoRef.current[dmId] = { username, online: online ?? false, avatarUrl };
+  const handleDmSelect = (dmId: string, username?: string, online?: boolean, avatarUrl?: string, userId?: string) => {
+    if (username) dmInfoRef.current[dmId] = { username, online: online ?? false, avatarUrl, userId };
     setOpenDmIds((prev) => prev.includes(dmId) ? prev : [...prev, dmId]);
   };
+
+  // ── Global DM notifications ────────────────────────────────────────────────
+  // Messages in conversations WITHOUT an open popout used to arrive silently —
+  // the per-popout Realtime subscription only exists while a popout is open.
+  // One RLS-scoped subscription (dm_messages RLS = participants only, so this
+  // client only ever receives its own conversations) toasts + pings for them,
+  // gated by Settings → Notifications → "Direct messages".
+  const openDmIdsRef = useRef(openDmIds);
+  useEffect(() => { openDmIdsRef.current = openDmIds; }, [openDmIds]);
+  useEffect(() => {
+    if (!supabaseActive || !isLoggedIn || !identity.userId) return;
+    const uid = identity.userId;
+    const ch = supabase
+      .channel("dm-notify")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "dm_messages" },
+        async (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          if ((row.author_id as string) === uid) return;
+          const convId = row.conversation_id as string;
+          if (openDmIdsRef.current.includes(convId)) return; // popout already shows it live
+          if (!readUserPrefs().notifyDMs) return;
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("display_name")
+            .eq("id", row.author_id as string)
+            .maybeSingle();
+          const name = (profile?.display_name as string) || "Someone";
+          const preview =
+            ((row.content as string) || (row.gif_url ? "sent a GIF" : row.image_url ? "sent an image" : "sent a message")).slice(0, 80);
+          playPing("message");
+          appToast(`💬 ${name}: ${preview}`);
+        }
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(ch); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabaseActive, isLoggedIn, identity.userId]);
 
 
   return (
@@ -826,7 +872,7 @@ function AppShellInner() {
             style={{ top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
           >
             <FriendsView
-              onDmSelect={(id, username, online, avatarUrl) => { handleDmSelect(id, username, online, avatarUrl); setShowFriends(false); }}
+              onDmSelect={(id, username, online, avatarUrl, userId) => { handleDmSelect(id, username, online, avatarUrl, userId); setShowFriends(false); }}
               onClose={() => setShowFriends(false)}
               onViewProfile={(u) => setViewingUser(u)}
             />
@@ -872,6 +918,7 @@ function AppShellInner() {
           username={dmInfoRef.current[dmId]?.username ?? dmId}
           online={dmInfoRef.current[dmId]?.online ?? false}
           avatarUrl={dmInfoRef.current[dmId]?.avatarUrl}
+          peerUserId={dmInfoRef.current[dmId]?.userId}
           index={idx}
           onClose={() => setOpenDmIds((prev) => prev.filter((id) => id !== dmId))}
         />
@@ -962,11 +1009,11 @@ function AppShellInner() {
           onClose={() => setViewingUser(null)}
           onDm={
         viewingUser.dmId
-          ? () => { handleDmSelect(viewingUser.dmId!, viewingUser.displayName, viewingUser.online, viewingUser.avatarUrl); setViewingUser(null); setShowFriends(false); }
+          ? () => { handleDmSelect(viewingUser.dmId!, viewingUser.displayName, viewingUser.online, viewingUser.avatarUrl, viewingUser.userId); setViewingUser(null); setShowFriends(false); }
           : viewingUser.userId && viewingUser.userId !== identity.userId
           ? async () => {
               const convId = await openConversation(viewingUser.userId!);
-              if (convId) { handleDmSelect(convId, viewingUser.displayName, viewingUser.online, viewingUser.avatarUrl); setViewingUser(null); }
+              if (convId) { handleDmSelect(convId, viewingUser.displayName, viewingUser.online, viewingUser.avatarUrl, viewingUser.userId); setViewingUser(null); }
             }
           : undefined
       }

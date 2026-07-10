@@ -8,6 +8,7 @@ import { EmojiPicker } from "@/components/messaging/EmojiPicker";
 import { GifPicker } from "@/components/messaging/GifPicker";
 import { useMessaging } from "@/contexts/MessagingContext";
 import { useUser } from "@/contexts/UserContext";
+import { usePresence } from "@/contexts/PresenceContext";
 import { uploadFile } from "@/lib/storage";
 
 // ── Demo seed data (for d1/d2/d3 preview conversations) ──────────────────────
@@ -68,14 +69,19 @@ interface DmPopoutProps {
   username: string;
   online: boolean;
   avatarUrl?: string;
+  /** Peer's userId — when known, live presence overrides the `online` snapshot */
+  peerUserId?: string;
   index: number;
   onClose: () => void;
 }
 
-export function DmPopout({ dmId, username, online, avatarUrl, index, onClose }: DmPopoutProps) {
+export function DmPopout({ dmId, username, online: onlineSnapshot, avatarUrl, peerUserId, index, onClose }: DmPopoutProps) {
   const messaging = useMessaging();
   const { identity } = useUser();
   const isMobile = useIsMobile();
+  const { online: presenceMap } = usePresence();
+  // Live presence when we know who the peer is; the open-time snapshot otherwise
+  const online = peerUserId ? peerUserId in presenceMap && presenceMap[peerUserId] !== "offline" : onlineSnapshot;
 
   // dmId is either a demo key ("d1") or a real conversationId (UUID)
   const isReal = UUID_RE.test(dmId);
