@@ -756,20 +756,18 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
                     setCanvasCtxMenu({ x: e.clientX, y: e.clientY });
                   }}
                 >
-                {(box.style.wallpaperUrl || box.collapsedStyle?.wallpaperUrl) && (() => {
-                  const wpSrc = box.style.wallpaperUrl ? box.style : (box.collapsedStyle ?? {});
-                  const wpUrl = box.style.wallpaperUrl || box.collapsedStyle?.wallpaperUrl;
-                  return (
-                    <div aria-hidden style={{
-                      position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none",
-                      backgroundImage: `url(${wpUrl})`,
-                      backgroundSize: wpSrc.wallpaperSize ?? "cover",
-                      backgroundPosition: wpSrc.wallpaperPosition ?? "center",
-                      backgroundRepeat: "no-repeat",
-                      opacity: wpSrc.wallpaperOpacity ?? 1,
-                    }} />
-                  );
-                })()}
+                {/* Open-view wallpaper — the EXPANDED style only. It must never fall
+                    back to the collapsed card's wallpaper, or the two backgrounds bleed. */}
+                {box.style.wallpaperUrl && (
+                  <div aria-hidden style={{
+                    position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none",
+                    backgroundImage: `url(${box.style.wallpaperUrl})`,
+                    backgroundSize: box.style.wallpaperSize ?? "cover",
+                    backgroundPosition: box.style.wallpaperPosition ?? "center",
+                    backgroundRepeat: "no-repeat",
+                    opacity: box.style.wallpaperOpacity ?? 1,
+                  }} />
+                )}
 
                 {box.items.map((item, idx) => {
                   const layout = getDefaultLayout(item, idx);
@@ -1115,6 +1113,7 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
                 boardId={boardId}
                 style={box.style}
                 onUpdate={(patch) => updateBoxStyle(boardId, boxId, patch)}
+                context="expanded"
               />
 
               {/* Collapsed style — independent overrides for the canvas card */}
@@ -1128,6 +1127,7 @@ export function ExpandedBlock({ boxId }: { boxId: string }) {
                   boardId={boardId}
                   style={{ ...box.style, ...(box.collapsedStyle ?? {}) }}
                   onUpdate={(patch) => updateBoxCollapsedStyle(boardId, boxId, patch)}
+                  context="collapsed"
                 />
                 {box.collapsedStyle && Object.keys(box.collapsedStyle).length > 0 && (
                   <button
@@ -1597,9 +1597,14 @@ const BLOCK_BORDER_STYLES: { id: string; label: string }[] = [
 
 const SHADOWS = ["none", "sm", "md", "lg"] as const;
 
-function BlockStyleEditor({ boxId, boardId, style, onUpdate }: {
+function BlockStyleEditor({ boxId, boardId, style, onUpdate, context = "collapsed" }: {
   boxId: string; boardId: string; style: BoxStyle; onUpdate: (patch: Partial<BoxStyle>) => void;
+  // Which surface this editor styles. Shadow / font color / padding only render on
+  // the collapsed canvas card — the expanded open view ignores them — so they are
+  // shown for "collapsed" only, keeping each section's controls to what it affects.
+  context?: "expanded" | "collapsed";
 }) {
+  const isCollapsed = context === "collapsed";
   const fileRef = useRef<HTMLInputElement>(null);
   const [openPicker, setOpenPicker] = useState<"bg" | "border" | "font" | null>(null);
 
@@ -1672,37 +1677,45 @@ function BlockStyleEditor({ boxId, boardId, style, onUpdate }: {
         </div>
       </section>
 
-      <section>
-        <SLabel>Shadow</SLabel>
-        <div className="flex gap-1.5">
-          {SHADOWS.map((sh) => (
-            <button key={sh} onClick={() => onUpdate({ shadow: sh })} className={cn("flex-1 rounded border py-1.5 text-xs transition-colors capitalize", style.shadow === sh ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]")}>{sh}</button>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <SLabel>Font color</SLabel>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <button onClick={() => setOpenPicker((v) => v === "font" ? null : "font")} className="h-7 w-10 rounded border border-[var(--border)]" style={{ backgroundColor: style.fontColor ?? "#f2f2f2" }} />
-            {openPicker === "font" && (
-              <div className="absolute top-9 left-0 z-50 rounded-lg border border-[var(--border)] shadow-xl overflow-hidden">
-                <HexColorPicker color={style.fontColor ?? "#f2f2f2"} onChange={(c) => onUpdate({ fontColor: c })} />
-              </div>
-            )}
+      {/* Shadow / font color / padding drive the collapsed canvas card only — the
+          expanded open view doesn't use them, so they're hidden there. */}
+      {isCollapsed && (
+        <section>
+          <SLabel>Shadow</SLabel>
+          <div className="flex gap-1.5">
+            {SHADOWS.map((sh) => (
+              <button key={sh} onClick={() => onUpdate({ shadow: sh })} className={cn("flex-1 rounded border py-1.5 text-xs transition-colors capitalize", style.shadow === sh ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]" : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text-muted)]")}>{sh}</button>
+            ))}
           </div>
-          <input className="flex-1 rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--text-primary)] outline-none uppercase" value={style.fontColor ?? "#f2f2f2"} onChange={(e) => onUpdate({ fontColor: e.target.value })} maxLength={7} />
-        </div>
-      </section>
+        </section>
+      )}
 
-      <section>
-        <SLabel>Padding</SLabel>
-        <div className="flex items-center gap-2">
-          <input type="number" min={0} max={64} value={style.padding} onChange={(e) => onUpdate({ padding: Number(e.target.value) })} className="w-20 rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] outline-none" />
-          <span className="text-xs text-[var(--text-muted)]">px</span>
-        </div>
-      </section>
+      {isCollapsed && (
+        <section>
+          <SLabel>Font color</SLabel>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button onClick={() => setOpenPicker((v) => v === "font" ? null : "font")} className="h-7 w-10 rounded border border-[var(--border)]" style={{ backgroundColor: style.fontColor ?? "#f2f2f2" }} />
+              {openPicker === "font" && (
+                <div className="absolute top-9 left-0 z-50 rounded-lg border border-[var(--border)] shadow-xl overflow-hidden">
+                  <HexColorPicker color={style.fontColor ?? "#f2f2f2"} onChange={(c) => onUpdate({ fontColor: c })} />
+                </div>
+              )}
+            </div>
+            <input className="flex-1 rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--text-primary)] outline-none uppercase" value={style.fontColor ?? "#f2f2f2"} onChange={(e) => onUpdate({ fontColor: e.target.value })} maxLength={7} />
+          </div>
+        </section>
+      )}
+
+      {isCollapsed && (
+        <section>
+          <SLabel>Padding</SLabel>
+          <div className="flex items-center gap-2">
+            <input type="number" min={0} max={64} value={style.padding} onChange={(e) => onUpdate({ padding: Number(e.target.value) })} className="w-20 rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs text-[var(--text-primary)] outline-none" />
+            <span className="text-xs text-[var(--text-muted)]">px</span>
+          </div>
+        </section>
+      )}
     </>
   );
 }

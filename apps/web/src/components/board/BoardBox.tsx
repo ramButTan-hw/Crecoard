@@ -833,22 +833,22 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
 
         {/* 8-directional resize handles — hidden for server members */}
         {!isFinished && !box.locked && canEdit && (<>
-          <div onMouseDown={makeResizeHandler({ n: true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:0,    left:8,   right:8,  height:6,  cursor:"n-resize",  zIndex:15 }} className="group/edge-n">
+          <div data-nodrag onMouseDown={makeResizeHandler({ n: true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:0,    left:8,   right:8,  height:6,  cursor:"n-resize",  zIndex:15 }} className="group/edge-n">
             <div className="absolute top-0 left-2 right-2 h-px bg-[var(--accent)] opacity-0 group-hover/edge-n:opacity-50 transition-opacity" />
           </div>
-          <div onMouseDown={makeResizeHandler({ s: true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", bottom:0, left:8,   right:8,  height:6,  cursor:"s-resize",  zIndex:15 }} className="group/edge-s">
+          <div data-nodrag onMouseDown={makeResizeHandler({ s: true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", bottom:0, left:8,   right:8,  height:6,  cursor:"s-resize",  zIndex:15 }} className="group/edge-s">
             <div className="absolute bottom-0 left-2 right-2 h-px bg-[var(--accent)] opacity-0 group-hover/edge-s:opacity-50 transition-opacity" />
           </div>
-          <div onMouseDown={makeResizeHandler({ w: true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:8,   left:0,   bottom:8, width:6,   cursor:"w-resize",  zIndex:15 }} className="group/edge-w">
+          <div data-nodrag onMouseDown={makeResizeHandler({ w: true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:8,   left:0,   bottom:8, width:6,   cursor:"w-resize",  zIndex:15 }} className="group/edge-w">
             <div className="absolute left-0 top-2 bottom-2 w-px bg-[var(--accent)] opacity-0 group-hover/edge-w:opacity-50 transition-opacity" />
           </div>
-          <div onMouseDown={makeResizeHandler({ e: true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:8,   right:0,  bottom:8, width:6,   cursor:"e-resize",  zIndex:15 }} className="group/edge-e">
+          <div data-nodrag onMouseDown={makeResizeHandler({ e: true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:8,   right:0,  bottom:8, width:6,   cursor:"e-resize",  zIndex:15 }} className="group/edge-e">
             <div className="absolute right-0 top-2 bottom-2 w-px bg-[var(--accent)] opacity-0 group-hover/edge-e:opacity-50 transition-opacity" />
           </div>
-          <div onMouseDown={makeResizeHandler({ n:true, w:true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:0,    left:0,  width:10, height:10, cursor:"nw-resize", zIndex:16 }} />
-          <div onMouseDown={makeResizeHandler({ n:true, e:true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:0,    right:0, width:10, height:10, cursor:"ne-resize", zIndex:16 }} />
-          <div onMouseDown={makeResizeHandler({ s:true, w:true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", bottom:0, left:0,  width:10, height:10, cursor:"sw-resize", zIndex:16 }} />
-          <div onMouseDown={makeResizeHandler({ s:true, e:true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", bottom:0, right:0, width:16, height:16, cursor:"se-resize", zIndex:16 }} className="group/se">
+          <div data-nodrag onMouseDown={makeResizeHandler({ n:true, w:true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:0,    left:0,  width:10, height:10, cursor:"nw-resize", zIndex:16 }} />
+          <div data-nodrag onMouseDown={makeResizeHandler({ n:true, e:true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", top:0,    right:0, width:10, height:10, cursor:"ne-resize", zIndex:16 }} />
+          <div data-nodrag onMouseDown={makeResizeHandler({ s:true, w:true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", bottom:0, left:0,  width:10, height:10, cursor:"sw-resize", zIndex:16 }} />
+          <div data-nodrag onMouseDown={makeResizeHandler({ s:true, e:true })} onClick={e => e.stopPropagation()} style={{ position:"absolute", bottom:0, right:0, width:16, height:16, cursor:"se-resize", zIndex:16 }} className="group/se">
             <svg aria-hidden width="10" height="10" viewBox="0 0 10 10" style={{ position:"absolute", bottom:3, right:3, pointerEvents:"none" }} className="opacity-20 group-hover/se:opacity-65 transition-opacity">
               <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
               <circle cx="4.5" cy="8.5" r="1.5" fill="currentColor" />

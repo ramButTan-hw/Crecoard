@@ -556,6 +556,7 @@ export interface BlockItem {
   timerProgressStyle?: "none" | "bar" | "thick-bar" | "ring" | "bg-fill" | "bg-dim" | "bg-sweep";
   timerProgressDir?: "ltr" | "rtl" | "ttb" | "btt"; // direction for bg-fill / bg-sweep
   timerProgressColor?: string; // override accent for progress elements
+  timerAlertSound?: boolean;   // play a chime when a countdown / stopwatch target completes (default on)
   timerElapsedSecs?: number;   // base elapsed at last start/pause
   timerRemainingSecs?: number; // base remaining at last start/pause
   timerRunning?: boolean;
@@ -583,6 +584,9 @@ export interface BlockItem {
   playlistBgImage?: string;
   playlistBgImageOpacity?: number; // 0–100, default 100
   playlistAccentColor?: string;
+  playlistTextColor?: string;   // track title / number colour (default muted/secondary)
+  playlistIconColor?: string;   // platform badge colour override (default per-platform)
+  playlistTextSize?: number;    // track-row font size in px (default 11)
   playlistBorderRadius?: number;
   playlistBorderWidth?: number;
   playlistBorderColor?: string;
@@ -768,6 +772,7 @@ export interface BlockItem {
   tableMemberRows?: Record<string, TableRow[]>;
   kanbanFontFamily?: string;
   kanbanFontSize?: number;
+  kanbanFontColor?: string;    // card text colour (default var(--text-primary))
   kanbanBorderRadius?: number;
   kanbanCardBgColor?: string;
   kanbanColumnBgColor?: string;

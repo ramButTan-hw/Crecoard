@@ -9,10 +9,10 @@
  * behind), or an image. Self-contained; wired in ItemRenderer via WithItemMenu.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AudioLines, AudioWaveform, Waves, CloudRain, Sparkles, Wind, Mic, Disc3, Star,
-  Image as ImageIcon, Sun, Wand2,
+  Image as ImageIcon, Sun, Wand2, MonitorSmartphone,
 } from "lucide-react";
 import type { BlockItem } from "@/store/boardStore";
 import { applyImageUpload } from "@/lib/storage";
@@ -460,6 +460,12 @@ export function VisualizerItem({ item }: { item: BlockItem; upd: Upd; collapsed?
   };
   const source = item.visualizerAudioSource ?? (item.visualizerMic ? "mic" : "off");
 
+  // Audio capture (mic / system loopback) is a desktop-app exclusive: the browser
+  // can't reliably capture system audio and would otherwise throw a permission
+  // prompt. Detected after mount so SSR and the first client render agree.
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => { setIsDesktop(typeof window !== "undefined" && !!window.electron); }, []);
+
   // Background image loader
   useEffect(() => {
     if (item.visualizerBgType === "image" && item.visualizerBgImage) {
@@ -521,7 +527,10 @@ export function VisualizerItem({ item }: { item: BlockItem; upd: Upd; collapsed?
     window.addEventListener("touchstart", resumeOnGesture, { passive: true });
 
     (async () => {
-      if (source === "off") return;
+      // Desktop-only audio: on the web we never touch getUserMedia/getDisplayMedia,
+      // so there's no permission prompt — the loop just animates procedurally.
+      const desktop = typeof window !== "undefined" && !!window.electron;
+      if (source === "off" || !desktop) return;
       try {
         if (source === "system") {
           const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
@@ -636,6 +645,20 @@ export function VisualizerItem({ item }: { item: BlockItem; upd: Upd; collapsed?
   return (
     <div className="relative h-full w-full overflow-hidden rounded-[inherit]" onPointerDown={(e) => e.stopPropagation()}>
       <canvas ref={canvasRef} className="block h-full w-full" />
+
+      {/* Web disclaimer — the user chose an audio source, but capture is desktop-only,
+          so explain why it isn't reacting to their sound instead of silently failing. */}
+      {!isDesktop && source !== "off" && (
+        <div
+          className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-center gap-1.5 px-3 py-2 pointer-events-none"
+          style={{ background: "linear-gradient(to top, rgba(0,0,0,0.78), rgba(0,0,0,0))" }}
+        >
+          <MonitorSmartphone size={12} className="shrink-0 text-white/80" />
+          <span className="text-[10px] leading-snug text-white/85 text-center">
+            Audio reactivity needs the desktop app — on the web it animates on its own.
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -851,12 +874,18 @@ export function VisualizerStylePanel({ item, upd }: { item: BlockItem; upd: Upd 
             </button>
           ))}
         </div>
+        {!isDesktop && (
+          <p className="mt-1.5 flex items-start gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-overlay)]/50 px-2 py-1.5 text-[10px] leading-snug text-[var(--text-muted)]">
+            <MonitorSmartphone size={11} className="mt-px shrink-0" />
+            <span>Mic &amp; system audio are <span className="text-[var(--text-secondary)]">desktop-app only</span> — capturing sound isn&apos;t possible on the web, so here the visualizer animates on its own. Your choice is saved and works in the desktop app.</span>
+          </p>
+        )}
         <p className="mt-1.5 flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
           <Mic size={10} />
           {curSource === "system"
-            ? (isDesktop ? "Visualizes whatever's playing on your PC (system loopback)." : "Browser will ask to share a tab/screen with audio.")
+            ? (isDesktop ? "Visualizes whatever's playing on your PC (system loopback)." : "System loopback — desktop app only.")
             : curSource === "mic"
-              ? "Reacts to your microphone."
+              ? (isDesktop ? "Reacts to your microphone." : "Microphone — desktop app only.")
               : "Smooth procedural motion — pick Mic or System to make it react to sound."}
         </p>
 

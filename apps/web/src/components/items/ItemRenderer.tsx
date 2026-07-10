@@ -3021,6 +3021,35 @@ function AnalogClock({ now, item, accent, fontColor, size }: {
   );
 }
 
+// Completion alert — a short ascending 3-note chime synthesized with the Web
+// Audio API (no asset to bundle). The user already gestured (they pressed Start),
+// so sticky activation lets this play even though completion is minutes later.
+function playTimerChime() {
+  try {
+    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    void ctx.resume().catch(() => {});
+    const notes = [880, 1108.73, 1318.51]; // A5 · C#6 · E6 — a bright major chime
+    const t0 = ctx.currentTime;
+    notes.forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = f;
+      const start = t0 + i * 0.16;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.3, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.55);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.6);
+    });
+    setTimeout(() => { void ctx.close().catch(() => {}); }, 1400);
+  } catch { /* audio unavailable — the visual flash still fires */ }
+}
+
 function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextItems }: { item: BlockItem; upd: (p: Partial<BlockItem>) => void; collapsed?: boolean; isFinished?: boolean; containerH?: number; extraContextItems?: ContextMenuEntry[] }) {
   const mode = item.timerMode ?? "countdown";
   const total = item.timerSeconds ?? 300;
@@ -3098,14 +3127,26 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
     } else {
       upd({ timerRunning: false, timerRemainingSecs: 0 });
       setCompleted(true);
+      if (item.timerAlertSound !== false) playTimerChime();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining, storeRunning, mode, pomodoroEnabled]);
 
+  // Stop detection — when a stopwatch reaches its target (mirrors the countdown alert)
+  useEffect(() => {
+    if (!storeRunning || mode !== "stopwatch") return;
+    const tgt = item.timerStopwatchTargetSecs ?? 0;
+    if (tgt <= 0 || elapsed < tgt) return;
+    upd({ timerRunning: false, timerElapsedSecs: tgt });
+    setCompleted(true);
+    if (item.timerAlertSound !== false) playTimerChime();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsed, storeRunning, mode, item.timerStopwatchTargetSecs]);
+
   // Completed glow clear
   useEffect(() => {
     if (!completed) return;
-    const t = setTimeout(() => setCompleted(false), 1800);
+    const t = setTimeout(() => setCompleted(false), 2600);
     return () => clearTimeout(t);
   }, [completed]);
 
@@ -3171,6 +3212,26 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
   // depletes as it runs out; a stopwatch fills toward its target.
   const usedFrac = mode === "stopwatch" ? progress : (1 - progress);
 
+  // bg-fill / bg-sweep reveal or hide the ACTUAL background (image/color) via a
+  // clip-path, instead of painting a coloured overlay on top. bg-fill grows the
+  // image in from an edge as time elapses; bg-sweep starts full and sweeps the
+  // image away to transparency. `dir` picks the edge the visible region hugs.
+  const progressPS = item.timerProgressStyle ?? "bar";
+  const progressDirection = item.timerProgressDir ?? "btt";
+  const bgVisibleFrac =
+    !showProgress ? null
+    : progressPS === "bg-fill" ? usedFrac
+    : progressPS === "bg-sweep" ? (1 - usedFrac)
+    : null;
+  const bgClip = bgVisibleFrac === null ? undefined : (() => {
+    const hidden = `${(Math.max(0, Math.min(1, 1 - bgVisibleFrac)) * 100).toFixed(2)}%`;
+    if (progressDirection === "ltr") return `inset(0 ${hidden} 0 0)`; // reveal from left
+    if (progressDirection === "rtl") return `inset(0 0 0 ${hidden})`; // reveal from right
+    if (progressDirection === "ttb") return `inset(0 0 ${hidden} 0)`; // reveal from top
+    return `inset(${hidden} 0 0 0)`;                                   // btt: reveal from bottom
+  })();
+  const hasBgLayer = !!item.timerBgImage || !!item.timerBgColor;
+
   const dateStr = mode === "clock" && item.timerShowDate
     ? (() => {
         const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
@@ -3227,7 +3288,7 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
       onMouseLeave={() => setHovered(false)}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
     >
-      {/* Background color layer */}
+      {/* Background color layer (clipped by bg-fill / bg-sweep progress) */}
       {item.timerBgColor && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 0,
@@ -3235,10 +3296,12 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
           borderRadius: br,
           opacity: (item.timerBgOpacity ?? 100) / 100,
           pointerEvents: "none",
+          clipPath: bgClip, WebkitClipPath: bgClip,
+          transition: bgClip ? "clip-path 1s linear" : undefined,
         }} />
       )}
 
-      {/* Background image layer */}
+      {/* Background image layer (clipped by bg-fill / bg-sweep progress) */}
       {item.timerBgImage && (
         <div style={{
           position: "absolute", inset: 0, zIndex: 0,
@@ -3248,34 +3311,16 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
           borderRadius: br,
           opacity: (item.timerBgImageOpacity ?? 80) / 100,
           pointerEvents: "none",
+          clipPath: bgClip, WebkitClipPath: bgClip,
+          transition: bgClip ? "clip-path 1s linear" : undefined,
         }} />
       )}
 
-      {/* ── Background-fill progress layer (zIndex 1, between bg and content) ── */}
+      {/* ── Progress background layer (zIndex 1, between bg and content) ── */}
       {(() => {
         const ps = item.timerProgressStyle ?? "bar";
-        const dir = item.timerProgressDir ?? "btt";
         const pc = item.timerProgressColor ?? accent;
-        const pct = progress * 100;
-        const freshPct = (1 - usedFrac) * 100; // sweep edge: fresh-vs-used boundary
         if (!showProgress || ps === "none" || ps === "bar" || ps === "thick-bar" || ps === "ring") return null;
-
-        if (ps === "bg-fill") {
-          // Accent-tinted fill that shrinks as time runs out
-          const fillStyle: React.CSSProperties = {
-            position: "absolute", zIndex: 1, transition: "all 1s linear", pointerEvents: "none",
-            background: pc + "40",
-          };
-          if (dir === "ltr")      { fillStyle.left = 0; fillStyle.top = 0; fillStyle.bottom = 0; fillStyle.width = `${pct}%`; }
-          else if (dir === "rtl") { fillStyle.right = 0; fillStyle.top = 0; fillStyle.bottom = 0; fillStyle.width = `${pct}%`; }
-          else if (dir === "ttb") { fillStyle.top = 0; fillStyle.left = 0; fillStyle.right = 0; fillStyle.height = `${pct}%`; }
-          else                    { fillStyle.bottom = 0; fillStyle.left = 0; fillStyle.right = 0; fillStyle.height = `${pct}%`; }
-          return (
-            <div style={{ position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", borderRadius: br, pointerEvents: "none" }}>
-              <div style={fillStyle} />
-            </div>
-          );
-        }
 
         if (ps === "bg-dim") {
           // Uniform dark overlay that intensifies as time is used up
@@ -3289,22 +3334,17 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
           );
         }
 
-        if (ps === "bg-sweep") {
-          // A grey "curtain" sweeps from the expired side — sharp edge between fresh and expired
-          const expiredStyle: React.CSSProperties = {
-            position: "absolute", zIndex: 1, transition: "all 1s linear", pointerEvents: "none",
-            background: "rgba(30,30,30,0.65)",
-            backdropFilter: "grayscale(1) brightness(0.55)",
-            WebkitBackdropFilter: "grayscale(1) brightness(0.55)",
-          };
-          if (dir === "ltr")      { expiredStyle.left = `${freshPct}%`; expiredStyle.top = 0; expiredStyle.bottom = 0; expiredStyle.right = 0; }
-          else if (dir === "rtl") { expiredStyle.right = `${freshPct}%`; expiredStyle.top = 0; expiredStyle.bottom = 0; expiredStyle.left = 0; }
-          else if (dir === "ttb") { expiredStyle.top = `${freshPct}%`; expiredStyle.left = 0; expiredStyle.right = 0; expiredStyle.bottom = 0; }
-          else                    { expiredStyle.bottom = `${freshPct}%`; expiredStyle.left = 0; expiredStyle.right = 0; expiredStyle.top = 0; }
+        // bg-fill / bg-sweep reveal the real background via clip-path (applied to
+        // the bg layers above). With no background to reveal, fall back to a
+        // clipped accent tint so the mode still shows progress instead of nothing.
+        if ((ps === "bg-fill" || ps === "bg-sweep") && !hasBgLayer) {
           return (
-            <div style={{ position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", borderRadius: br, pointerEvents: "none" }}>
-              <div style={expiredStyle} />
-            </div>
+            <div style={{
+              position: "absolute", inset: 0, zIndex: 1, borderRadius: br, pointerEvents: "none",
+              background: pc + "40",
+              clipPath: bgClip, WebkitClipPath: bgClip,
+              transition: "clip-path 1s linear",
+            }} />
           );
         }
 
@@ -3446,6 +3486,19 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
           </div>
         )}
       </div>
+      {/* Completion alert — a pulsing accent ring + tint flash over the card so the
+          finish is unmissable even if the sound is muted or off-screen. */}
+      {completed && (
+        <div
+          aria-hidden
+          className="absolute inset-0 z-20 pointer-events-none animate-pulse"
+          style={{
+            borderRadius: br,
+            background: accent + "1f",
+            boxShadow: `inset 0 0 0 3px ${accent}, 0 0 26px 2px ${accent}aa`,
+          }}
+        />
+      )}
       {ctxMenu && (
         <ContextMenu
           x={ctxMenu.x} y={ctxMenu.y}
@@ -3846,6 +3899,19 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
         </div>
       </PanelSection>
 
+      {/* Alert on completion */}
+      {mode !== "clock" && (
+        <PanelSection title="Alert" id="timer-alert">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={item.timerAlertSound !== false} onChange={(e) => upd({ timerAlertSound: e.target.checked })} className="accent-[var(--accent)]" />
+            <span className="text-[var(--text-secondary)]">Play a chime when it finishes</span>
+          </label>
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            The timer also flashes when done.{mode === "stopwatch" ? " Set a target above so the stopwatch can finish." : ""}
+          </p>
+        </PanelSection>
+      )}
+
       {/* Progress indicator — countdown always; stopwatch only once a target is set */}
       {(mode === "countdown" || (mode === "stopwatch" && (item.timerStopwatchTargetSecs ?? 0) > 0)) && (
         <PanelSection title="Progress indicator" id="timer-progress">
@@ -3856,9 +3922,9 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
                 { id: "bar",      label: "Bar",        desc: "Thin bar below time" },
                 { id: "thick-bar",label: "Thick bar",  desc: "Tall bar below time" },
                 { id: "ring",     label: "Ring",       desc: "Circular ring border" },
-                { id: "bg-fill",  label: "BG fill",    desc: "Accent tint sweeps background" },
+                { id: "bg-fill",  label: "BG fill",    desc: "Background fills in as time elapses" },
                 { id: "bg-dim",   label: "BG dim",     desc: "Background fades to grey" },
-                { id: "bg-sweep", label: "BG sweep",   desc: "Grey curtain over expired portion" },
+                { id: "bg-sweep", label: "BG sweep",   desc: "Background sweeps away to clear" },
                 { id: "none",     label: "None",       desc: "No progress indicator" },
               ] as { id: string; label: string; desc: string }[]).map((opt) => {
                 const active = (item.timerProgressStyle ?? "bar") === opt.id;
@@ -9472,12 +9538,12 @@ function WidgetItem({ item, upd, vars, collapsed, isFinished, extraContextItems,
 // resolveEmbed & friends live in lib/playlist so the global PlayerHost (which
 // owns the actual media elements — playback survives board switches) shares them.
 
-function PlatformBadge({ platform }: { platform: string }) {
-  const color = PLATFORM_COLORS[platform];
+function PlatformBadge({ platform, colorOverride, fontSize }: { platform: string; colorOverride?: string; fontSize?: number }) {
+  const color = colorOverride || PLATFORM_COLORS[platform];
   return (
     <span
-      className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-      style={{ background: color ? color + "25" : "var(--surface-overlay)", color: color ?? "var(--text-muted)" }}
+      className="shrink-0 rounded-full px-1.5 py-0.5 font-semibold"
+      style={{ background: color ? color + "25" : "var(--surface-overlay)", color: color ?? "var(--text-muted)", fontSize: fontSize ?? 10 }}
     >
       {platform}
     </span>
@@ -9696,6 +9762,10 @@ function PlaylistItem({ item, upd, boardId, boxId, collapsed, isFinished, canInt
   // here or the pinned player would get pointer-events:none and eat no clicks).
   const slotInteractive = canInteract !== false || !!isFinished;
   const accent = item.playlistAccentColor || "var(--accent)";
+  // Track-list text / icon overrides (fall back to the current defaults)
+  const trackTextColor = item.playlistTextColor;                 // undefined → theme muted/secondary
+  const trackTextSize = item.playlistTextSize ?? 11;
+  const trackIconColor = item.playlistIconColor;                 // undefined → per-platform colour
   const showList = item.playlistShowList !== false;
   const volSupported = !embed || embed.kind === "audio" || embed.platform === "YouTube" || embed.platform === "SoundCloud";
   const layout = item.playlistLayout ?? (item.playlistCompact ? "minimal" : "stack");
@@ -9985,9 +10055,10 @@ function PlaylistItem({ item, upd, boardId, boxId, collapsed, isFinished, canInt
             className={cn("group flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors", canPlaybackUI && "cursor-pointer", !active && canPlaybackUI && "hover:bg-white/5")}
             style={active ? { backgroundColor: accent + "25" } : undefined}
             onClick={() => goTo(i)}>
-            <span className="text-[11px] tabular-nums w-4 shrink-0 text-center" style={{ color: active ? accent : "var(--text-muted)" }}>{i + 1}</span>
-            <PlatformBadge platform={trackEmbed.platform} />
-            <span className={cn("flex-1 text-[11px] truncate", active ? "font-medium" : "text-[var(--text-secondary)]")} style={active ? { color: accent } : undefined}
+            <span className="tabular-nums w-4 shrink-0 text-center" style={{ fontSize: trackTextSize, color: active ? accent : (trackTextColor ?? "var(--text-muted)") }}>{i + 1}</span>
+            <PlatformBadge platform={trackEmbed.platform} colorOverride={trackIconColor} fontSize={Math.max(8, trackTextSize - 1)} />
+            <span className={cn("flex-1 truncate", active ? "font-medium" : !trackTextColor && "text-[var(--text-secondary)]")}
+              style={{ fontSize: trackTextSize, color: active ? accent : trackTextColor }}
               title={track.addedBy ? `Added by ${track.addedBy}` : undefined}>{track.title}</span>
             {canRemoveTrack(track) && (
               <button onClick={(e) => { e.stopPropagation(); removeTrack(track.id); }}
@@ -10274,7 +10345,7 @@ function PlaylistLayoutIcon({ layout }: { layout: string }) {
 }
 
 export function PlaylistStylePanel({ item, upd }: { item: BlockItem; upd: (p: Partial<BlockItem>) => void }) {
-  const [openPicker, setOpenPicker] = useState<"accent" | "bg" | "bgGradTo" | "border" | null>(null);
+  const [openPicker, setOpenPicker] = useState<"accent" | "bg" | "bgGradTo" | "border" | "text" | "icon" | null>(null);
   const bgImgFileRef = useRef<HTMLInputElement>(null);
   const accent = item.playlistAccentColor || "var(--accent)";
   const layout = item.playlistLayout ?? (item.playlistCompact ? "minimal" : "stack");
@@ -10502,6 +10573,54 @@ export function PlaylistStylePanel({ item, upd }: { item: BlockItem; upd: (p: Pa
               )}
             </div>
           </div>
+          {/* Track text color */}
+          <div className="flex items-center justify-between">
+            <span className="text-[var(--text-secondary)]">Text color</span>
+            <div className="flex items-center gap-1.5">
+              {item.playlistTextColor && (
+                <button onClick={() => upd({ playlistTextColor: undefined })} className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]">Reset</button>
+              )}
+              <div className="relative">
+                <button className="h-5 w-5 rounded border border-[var(--border)]"
+                  style={{ background: item.playlistTextColor || "var(--text-secondary)" }}
+                  onClick={() => setOpenPicker(openPicker === "text" ? null : "text")} />
+                {openPicker === "text" && (
+                  <div className="absolute right-0 top-7 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-2 shadow-xl">
+                    <input type="color" value={item.playlistTextColor || "#c7c7c7"} onChange={(e) => upd({ playlistTextColor: e.target.value })} className="h-8 w-24 cursor-pointer border-0 p-0" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* Icon (platform badge) color */}
+          <div className="flex items-center justify-between">
+            <span className="text-[var(--text-secondary)]">Icon color</span>
+            <div className="flex items-center gap-1.5">
+              {item.playlistIconColor && (
+                <button onClick={() => upd({ playlistIconColor: undefined })} className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]">Reset</button>
+              )}
+              <div className="relative">
+                <button className="h-5 w-5 rounded border border-[var(--border)]"
+                  style={{ background: item.playlistIconColor || "#ff0000" }}
+                  onClick={() => setOpenPicker(openPicker === "icon" ? null : "icon")} />
+                {openPicker === "icon" && (
+                  <div className="absolute right-0 top-7 z-50 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-2 shadow-xl">
+                    <input type="color" value={item.playlistIconColor || "#ff0000"} onChange={(e) => upd({ playlistIconColor: e.target.value })} className="h-8 w-24 cursor-pointer border-0 p-0" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* Track text size */}
+          <div className="flex items-center justify-between">
+            <span className="text-[var(--text-secondary)]">Text size</span>
+            <div className="flex items-center gap-1.5">
+              <input type="range" min={9} max={18} value={item.playlistTextSize ?? 11}
+                onChange={(e) => upd({ playlistTextSize: Number(e.target.value) })}
+                className="w-20 h-1 cursor-pointer" style={{ accentColor: accent }} />
+              <span className="tabular-nums w-8 text-right text-[var(--text-muted)]">{item.playlistTextSize ?? 11}px</span>
+            </div>
+          </div>
           {/* Border */}
           <div className="flex items-center justify-between">
             <span className="text-[var(--text-secondary)]">Border</span>
@@ -10548,12 +10667,12 @@ const DEFAULT_KANBAN_COLUMNS: KanbanColumn[] = [
 
 function KanbanSortableCard({
   card, canEdit, onEdit, onDelete,
-  cardBg, fontSize, fontFamily, borderRadius, cardGap,
+  cardBg, fontSize, fontFamily, fontColor, borderRadius, cardGap,
   assignee, inDoneColumn,
 }: {
   card: KanbanCard; canEdit: boolean;
   onEdit: (id: string) => void; onDelete: (id: string) => void;
-  cardBg: string; fontSize: number; fontFamily: string; borderRadius: number; cardGap: number;
+  cardBg: string; fontSize: number; fontFamily: string; fontColor: string; borderRadius: number; cardGap: number;
   assignee?: ServerMember; inDoneColumn?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -10582,7 +10701,7 @@ function KanbanSortableCard({
       onDoubleClick={(e) => { e.stopPropagation(); if (canEdit) onEdit(card.id); }}
     >
       <div className="flex items-start justify-between gap-1">
-        <span style={{ flex: 1, wordBreak: "break-word", color: "var(--text-primary)", lineHeight: 1.4 }}>
+        <span style={{ flex: 1, wordBreak: "break-word", color: fontColor, lineHeight: 1.4 }}>
           {card.text || <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>Empty card</span>}
         </span>
         {canEdit && (
@@ -10712,7 +10831,7 @@ function KanbanColumnContainer({
   col, colCards, canEditCards, canEditColumns, renamingColId, renameVal, setRenamingColId, setRenameVal,
   renameColumn, deleteColumn, toggleDoneColumn, addCard, deleteCard, setEditCardId, showCount,
   memberById,
-  headerBg, accent, columnBg, borderRadius, cardBg, fontSize, fontFamily, cardGap,
+  headerBg, accent, columnBg, borderRadius, cardBg, fontSize, fontFamily, fontColor, cardGap,
 }: {
   col: KanbanColumn;
   colCards: KanbanCard[];
@@ -10737,6 +10856,7 @@ function KanbanColumnContainer({
   cardBg: string;
   fontSize: number;
   fontFamily: string;
+  fontColor: string;
   cardGap: number;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: col.id });
@@ -10849,6 +10969,7 @@ function KanbanColumnContainer({
                 cardBg={colCardBg}
                 fontSize={fontSize}
                 fontFamily={fontFamily}
+                fontColor={fontColor}
                 borderRadius={borderRadius}
                 cardGap={cardGap}
                 assignee={card.assigneeId ? memberById.get(card.assigneeId) : undefined}
@@ -10947,6 +11068,7 @@ function KanbanItem({
   const accent = item.kanbanAccentColor ?? "#d59ee8";
   const fontSize = item.kanbanFontSize ?? 13;
   const fontFamily = item.kanbanFontFamily ?? "";
+  const fontColor = item.kanbanFontColor ?? "var(--text-primary)";
   const borderRadius = item.kanbanBorderRadius ?? 8;
   const cardGap = item.kanbanCardGap ?? 6;
   const cardBg = item.kanbanCardBgColor ?? "var(--surface-overlay)";
@@ -10958,6 +11080,17 @@ function KanbanItem({
   const [editCardId, setEditCardId] = useState<string | null>(null);
   const [renamingColId, setRenamingColId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState("");
+  // One-time discoverability hint: double-click a card to open it (due date + reminder).
+  // Dismissed state persists so it doesn't nag after the user gets it.
+  const [reminderHintDismissed, setReminderHintDismissed] = useState(true);
+  useEffect(() => {
+    try { setReminderHintDismissed(localStorage.getItem("crecoard-kanban-reminder-hint") === "1"); }
+    catch { setReminderHintDismissed(false); }
+  }, []);
+  const dismissReminderHint = () => {
+    setReminderHintDismissed(true);
+    try { localStorage.setItem("crecoard-kanban-reminder-hint", "1"); } catch { /* ignore */ }
+  };
   // Track IDs of freshly created cards so cancel = delete
   const newCardIdRef = useRef<string | null>(null);
   const activeCard = cards.find((c) => c.id === activeCardId) ?? null;
@@ -11214,6 +11347,7 @@ function KanbanItem({
           cardBg={cardBg}
           fontSize={fontSize}
           fontFamily={fontFamily}
+          fontColor={fontColor}
           cardGap={cardGap}
         />
       ))}
@@ -11239,6 +11373,23 @@ function KanbanItem({
       {/* Background layer — opacity isolated so card content stays at full opacity */}
       <div className="pointer-events-none absolute inset-0" style={bgStyle} />
 
+      {/* Discoverability hint — reminders live behind a card's double-click, which
+          isn't obvious. Shows once (per browser) until dismissed. */}
+      {!reminderHintDismissed && canEditCards && cards.length > 0 && (
+        <div
+          className="relative z-[2] mx-2 mt-2 flex items-center gap-1.5 rounded-md border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-1 text-[11px] text-[var(--text-secondary)]"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <Bell size={12} className="shrink-0 text-[var(--accent)]" />
+          <span className="flex-1 leading-tight">
+            <span className="font-medium text-[var(--text-primary)]">Double-click a card</span> to add a due date &amp; reminder.
+          </span>
+          <button onClick={dismissReminderHint} title="Got it" className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+            <XIcon size={11} />
+          </button>
+        </div>
+      )}
+
       <DndContext
           id="dnd-item-renderer"
           sensors={sensors}
@@ -11262,7 +11413,7 @@ function KanbanItem({
                     boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
                     width: 200,
                     opacity: 0.9,
-                    color: "var(--text-primary)",
+                    color: fontColor,
                   }}
                 >
                   {activeCard.text || <span style={{ fontStyle: "italic", color: "var(--text-muted)" }}>Empty card</span>}
@@ -11473,6 +11624,7 @@ export function KanbanStylePanel({ item, upd }: { item: BlockItem; upd: (p: Part
         <div className="flex flex-col gap-2">
           {[
             { key: "kanbanAccentColor", label: "Accent", default: "#d59ee8" },
+            { key: "kanbanFontColor", label: "Card text", default: "#f2f2f2" },
             { key: "kanbanCardBgColor", label: "Card bg", default: "var(--surface-overlay)" },
             { key: "kanbanColumnBgColor", label: "Column bg", default: "var(--surface)" },
             { key: "kanbanHeaderBgColor", label: "Header bg", default: "transparent" },

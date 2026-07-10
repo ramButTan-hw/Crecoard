@@ -14,30 +14,25 @@
 <!-- Add 2–3 screenshots or a short GIF here — this is the first thing a reviewer looks at. -->
 <!-- ![Board canvas](docs/screenshot-board.png) -->
 
-## Download
-
-Crecoard runs in any browser at **[crecoard.com](https://crecoard.com)** — nothing to install.
-
-Prefer a native app? The **desktop app** (Windows) adds a system tray, a global quick-capture hotkey, and auto-updates in the background:
-
-**[⬇ Download the latest release »](https://github.com/ramButTan-hw/Crecoard-releases/releases/latest)**
-
----
-
 ## Roadmap
 
+- [ ] Clean up UI
+- [ ] Notification enhancements
+- [ ] Port over to MacOS
+- [ ] Correctly and fully implement community item implementations
+- [ ] Mobile app
+- [ ] Widget collections
 
 
 ## Tech stack
 
 | Layer | Tools |
 | --- | --- |
-| Web | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Zustand |
-| Backend | Supabase — Postgres with Row-Level Security, Auth, Storage, Realtime; SQL migrations, RPC functions, and triggers |
+| Web | Next.js 16, React 19, TypeScript, Tailwind CSS, Zustand |
+| Database | Supabase |
 | Desktop | Electron, electron-builder, electron-updater |
 | Tooling | Turborepo, npm workspaces |
 
-**Architecture notes worth a look:** the RLS + `SECURITY DEFINER` RPC pattern for counters and moderation (`supabase/migrations/`), the widget permission envelope and consent gate, and the Zustand board store that serializes/deserializes entire boards for the marketplace.
 
 ---
 
