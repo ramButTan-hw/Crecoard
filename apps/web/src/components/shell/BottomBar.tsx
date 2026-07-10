@@ -320,7 +320,7 @@ export function BottomBar({
             onClick={() => setShowProfile((v) => !v)}
             title={mounted ? (identity.displayName || "Profile") : "Profile"}
             className={cn(
-              "relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full overflow-hidden transition-all duration-200",
+              "relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full transition-all duration-200",
               showProfile
                 ? "ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--surface-raised)] scale-105"
                 : "hover:scale-110 hover:ring-2 hover:ring-[var(--accent)] hover:ring-offset-2 hover:ring-offset-[var(--surface-raised)]"
@@ -332,7 +332,7 @@ export function BottomBar({
             suppressHydrationWarning
           >
             {mounted && identity.avatarUrl ? (
-              <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
+              <img src={identity.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
             ) : (
               <span className="text-sm font-bold text-white select-none">
                 {mounted ? (identity.displayName[0] ?? "?").toUpperCase() : "?"}

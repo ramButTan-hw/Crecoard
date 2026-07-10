@@ -178,6 +178,53 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .cr-anim-glitch { text-shadow: none; }
 }
 
+/* ─── Accessibility (Settings → Accessibility; classes set by lib/accessibility.ts) ── */
+
+/* Reduce motion — collapse all animations/transitions to a single instant frame */
+.a11y-reduce-motion *,
+.a11y-reduce-motion *::before,
+.a11y-reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+.a11y-reduce-motion .cr-skeleton { animation: none; }
+.a11y-reduce-motion .cr-anim-fade, .a11y-reduce-motion .cr-anim-rise,
+.a11y-reduce-motion .cr-anim-scale, .a11y-reduce-motion .cr-anim-wipe,
+.a11y-reduce-motion .cr-anim-pulse, .a11y-reduce-motion .cr-anim-float,
+.a11y-reduce-motion .cr-glow-pulse-layer, .a11y-reduce-motion .cr-anim-glitch,
+.a11y-reduce-motion .cr-anim-breathe, .a11y-reduce-motion .cr-anim-rainbow,
+.a11y-reduce-motion [class^="cr-cust-"], .a11y-reduce-motion [class*=" cr-cust-"] { animation: none !important; }
+.a11y-reduce-motion .cr-anim-glitch { text-shadow: none; }
+
+/* High contrast — brighter text + borders; !important beats the theme engine's
+   inline CSS variables on the root */
+.a11y-high-contrast {
+  --text-primary: #ffffff !important;
+  --text-secondary: #eaeaee !important;
+  --text-muted: #c2c2ca !important;
+  --border: #71717c !important;
+}
+
+/* Underline links */
+.a11y-underline-links a { text-decoration: underline !important; }
+
+/* Always-visible focus outlines (not just :focus-visible) */
+.a11y-focus-always :is(button, a, input, select, textarea, [role="button"], [tabindex]):focus {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px !important;
+}
+
+/* Reduce transparency — remove frosted-glass blur so text sits on solid surfaces */
+.a11y-reduce-transparency * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Saturation — calmer, gray-leaning UI (applied to body so fixed overlays keep working) */
+.a11y-desaturate body { filter: saturate(var(--a11y-saturation, 100%)); }
+
 
 /* ── Accessibility floor ────────────────────────────────────────────────────
    Visible keyboard-focus ring app-wide; mouse clicks stay ring-free via

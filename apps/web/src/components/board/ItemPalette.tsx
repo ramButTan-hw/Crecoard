@@ -266,7 +266,7 @@ export const ITEM_DEFINITIONS: {
 
 // ─── Draggable palette item ───────────────────────────────────────────────────
 
-function DraggableItem({ def, selectedBoxId, onPick, tapMode }: { def: (typeof ITEM_DEFINITIONS)[number]; selectedBoxId: string | null; onPick?: (def: (typeof ITEM_DEFINITIONS)[number]) => void; tapMode?: boolean }) {
+function DraggableItem({ def, selectedBoxId, onPick, tapMode, dense }: { def: (typeof ITEM_DEFINITIONS)[number]; selectedBoxId: string | null; onPick?: (def: (typeof ITEM_DEFINITIONS)[number]) => void; tapMode?: boolean; dense?: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `palette-${def.key ?? def.type}`,
     data: { kind: "new-item", itemType: def.type, defaultItem: def.defaultItem },
@@ -295,19 +295,25 @@ function DraggableItem({ def, selectedBoxId, onPick, tapMode }: { def: (typeof I
       {...attributes}
       {...listeners}
       className={cn(
-        "flex cursor-grab items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all select-none",
+        "flex cursor-grab items-center gap-2.5 rounded-lg px-3 text-sm transition-all select-none",
+        dense ? "py-1.5" : "py-2",
         isDragging ? "opacity-40" : "text-[var(--text-secondary)] hover:bg-[var(--surface-overlay)] hover:text-[var(--text-primary)]",
         selectedBoxId && "text-[var(--accent)] hover:bg-[var(--accent)]/10"
       )}
-      title={(onPick ? "Click to add, or drag to place" : "Drag onto a block or to empty canvas to place directly") + (def.onRemove ? " · right-click to uninstall" : "")}
+      // In dense mode the description moves to the tooltip so each row is one line
+      title={`${def.description}${onPick ? " · click or drag to add" : " · drag onto a block or empty canvas"}${def.onRemove ? " · right-click to uninstall" : ""}`}
       onClick={onPick ? () => onPick(def) : undefined}
       onContextMenu={def.onRemove ? (e) => { e.preventDefault(); e.stopPropagation(); def.onRemove!(); } : undefined}
     >
       <span className={cn("flex-shrink-0", selectedBoxId ? "text-[var(--accent)]" : "text-[var(--text-muted)]")}>{def.icon}</span>
-      <div className="flex flex-col min-w-0">
-        <span className="text-sm leading-tight">{def.label}</span>
-        <span className="text-[11px] text-[var(--text-muted)] leading-tight">{def.description}</span>
-      </div>
+      {dense ? (
+        <span className="min-w-0 truncate text-sm leading-tight">{def.label}</span>
+      ) : (
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm leading-tight">{def.label}</span>
+          <span className="text-[11px] text-[var(--text-muted)] leading-tight">{def.description}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -338,15 +344,15 @@ function RailItem({ def, onPick }: { def: (typeof ITEM_DEFINITIONS)[number]; onP
 }
 
 // Palette groups — a flat 20-item list stopped scaling; the rail + search need structure.
+// Four broad buckets instead of six — fewer headers to scan.
 const GROUP_OF: Record<string, string> = {
-  text: "Content", list: "Content", image: "Content", table: "Content", calendar: "Content", kanban: "Content",
-  embed: "Media", playlist: "Media", timer: "Media", widget: "Media",
-  graph: "Data", api: "Data", "embed-card": "Data", external: "Data",
-  flashcard: "Study", quiz: "Study",
-  visualizer: "Media",
+  text: "Basics", list: "Basics", image: "Basics", table: "Basics", calendar: "Basics", kanban: "Basics",
+  embed: "Media", playlist: "Media", timer: "Media", widget: "Media", visualizer: "Media",
+  graph: "Data & Advanced", api: "Data & Advanced", external: "Data & Advanced", "embed-card": "Data & Advanced",
+  flashcard: "Data & Advanced", quiz: "Data & Advanced",
   chat: "Community", filebank: "Community", suggestion: "Community", guestbook: "Community", poll: "Community", twitch: "Community",
 };
-const GROUP_ORDER = ["Content", "Media", "Data", "Study", "Community", "Other"];
+const GROUP_ORDER = ["Basics", "Media", "Data & Advanced", "Community", "Other"];
 
 // New-user starter set — the rest hide behind "Show all items" until they've
 // built something, so a first-timer isn't faced with 24 choices at once.
@@ -523,6 +529,24 @@ export function ItemPalette({ onPick, desktop }: { onPick?: (def: (typeof ITEM_D
 
   const [collectionOpen, setCollectionOpen] = useState(true);
   const [search, setSearch] = useState("");
+  // Accordion: which item groups are expanded. Default to just the first
+  // ("Basics") so the panel opens calm instead of dumping all ~23 items.
+  // The remembered state is loaded AFTER mount (below) — reading localStorage in
+  // the useState initializer would make SSR and the first client render disagree
+  // (chevron rotation / which items show) → a hydration mismatch.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set([GROUP_ORDER[0]]));
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("crecoard-palette-groups");
+      if (raw) setOpenGroups(new Set(JSON.parse(raw) as string[]));
+    } catch { /* ignore */ }
+  }, []);
+  const toggleGroup = (g: string) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(g)) next.delete(g); else next.add(g);
+    try { localStorage.setItem("crecoard-palette-groups", JSON.stringify([...next])); } catch { /* ignore */ }
+    return next;
+  });
   const [showAllItems, setShowAllItems] = useState(() => typeof window !== "undefined" && localStorage.getItem("crecoard-palette-expanded") === "1");
   const [rail, setRail] = useState(() => typeof window !== "undefined" && localStorage.getItem("crecoard-palette-rail") === "1");
   const toggleRail = () => setRail((v) => {
@@ -649,14 +673,30 @@ export function ItemPalette({ onPick, desktop }: { onPick?: (def: (typeof ITEM_D
             </>
           ) : (
             <>
-              {groups.map(({ g, defs }) => (
-                <div key={g}>
-                  {!mobile && <p className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] opacity-70">{g}</p>}
-                  {defs.map((def) => (
-                    <DraggableItem key={def.key ?? def.type} def={def} selectedBoxId={selectedBoxId} onPick={onPick} tapMode={mobile} />
-                  ))}
-                </div>
-              ))}
+              {groups.map(({ g, defs }) => {
+                // Searching forces every group open so matches are never hidden.
+                const expanded = !!q || openGroups.has(g);
+                return (
+                  <div key={g}>
+                    {!mobile ? (
+                      <button
+                        onClick={() => toggleGroup(g)}
+                        disabled={!!q}
+                        className="flex w-full items-center gap-1.5 px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] opacity-70 transition-opacity hover:opacity-100"
+                      >
+                        <ChevronRight size={11} className={cn("transition-transform", expanded && "rotate-90")} />
+                        <span className="flex-1 text-left">{g}</span>
+                        <span className="font-normal opacity-70">{defs.length}</span>
+                      </button>
+                    ) : (
+                      <p className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] opacity-70">{g}</p>
+                    )}
+                    {(expanded || mobile) && defs.map((def) => (
+                      <DraggableItem key={def.key ?? def.type} def={def} selectedBoxId={selectedBoxId} onPick={onPick} tapMode={mobile} dense={!mobile} />
+                    ))}
+                  </div>
+                );
+              })}
               {groups.length === 0 && <p className="px-3 py-3 text-[11px] text-[var(--text-muted)]">No items match.</p>}
             </>
           )}

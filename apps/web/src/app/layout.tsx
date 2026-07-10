@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
+import { AccessibilityInit } from "@/components/shell/AccessibilityInit";
 
 export const metadata: Metadata = {
   title: "Crecoard",
@@ -40,6 +41,7 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <ServiceWorkerRegistrar />
+        <AccessibilityInit />
         {children}
       </body>
     </html>

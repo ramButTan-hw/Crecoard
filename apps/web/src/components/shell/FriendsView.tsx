@@ -7,6 +7,7 @@ import type { ViewableUser } from "./UserProfileModal";
 import { useFriends } from "@/contexts/FriendsContext";
 import { useMessaging } from "@/contexts/MessagingContext";
 import { useUser } from "@/contexts/UserContext";
+import { usePresence } from "@/contexts/PresenceContext";
 import type { PendingRequest } from "@/contexts/FriendsContext";
 
 type Tab = "online" | "all" | "pending";
@@ -38,6 +39,7 @@ const ADD_FRIEND_MSG: Record<string, { text: string; ok: boolean }> = {
   already_friends: { text: "You're already friends.",  ok: false },
   already_pending: { text: "Request already pending.", ok: false },
   self:           { text: "You can't add yourself.",   ok: false },
+  blocked:        { text: "This user isn't accepting friend requests.", ok: false },
   not_found:      { text: "No user found with that name.", ok: false },
   error:          { text: "Something went wrong.",     ok: false },
 };
@@ -47,13 +49,14 @@ const ADD_FRIEND_MSG: Record<string, { text: string; ok: boolean }> = {
 export function FriendsView({
   onDmSelect, onClose, onViewProfile,
 }: {
-  onDmSelect: (id: string, username?: string, online?: boolean, avatarUrl?: string) => void;
+  onDmSelect: (id: string, username?: string, online?: boolean, avatarUrl?: string, userId?: string) => void;
   onClose?: () => void;
   onViewProfile?: (u: ViewableUser) => void;
 }) {
   const { friends, pendingReceived, pendingSent, findUserByName, sendFriendRequestById, acceptRequest, declineOrRemove } = useFriends();
   const messaging = useMessaging();
   const { identity } = useUser();
+  const { online: presenceMap } = usePresence();
 
   const [tab, setTab] = useState<Tab>("online");
   const [search, setSearch] = useState("");
@@ -70,7 +73,7 @@ export function FriendsView({
     avatarChar: f.avatarChar,
     avatarUrl: f.avatarUrl,
     color: f.color,
-    online: false,   // TODO: wire to PresenceContext now that live presence exists
+    online: !!f.userId && f.userId in presenceMap && presenceMap[f.userId] !== "offline",
     status: undefined,
     dmId: null,
   }));
@@ -101,7 +104,7 @@ export function FriendsView({
   const handleMessage = async (f: DisplayFriend) => {
     if (f.userId) {
       const convId = await messaging.openConversation(f.userId);
-      if (convId) onDmSelect(convId, f.username, f.online, f.avatarUrl);
+      if (convId) onDmSelect(convId, f.username, f.online, f.avatarUrl, f.userId);
     } else if (f.dmId) {
       onDmSelect(f.dmId, f.username, f.online, f.avatarUrl);
     } else {
@@ -383,11 +386,11 @@ function FriendCard({
       className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] p-3 text-left transition-all hover:border-[var(--accent)]/40 hover:bg-[var(--surface-overlay)]"
     >
       <div
-        className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white overflow-hidden"
+        className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
         style={{ background: friend.color }}
       >
         {friend.avatarUrl
-          ? <img src={friend.avatarUrl} alt="" className="h-full w-full object-cover" />
+          ? <img src={friend.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
           : friend.avatarChar}
         <span className={cn(
           "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--surface)]",

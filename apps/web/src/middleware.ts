@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Paths that never require authentication
 // (/wallpaper renders only this machine's locally-cached boards — nothing remote)
-const PUBLIC_PREFIXES = ["/login", "/auth", "/api", "/invite", "/wallpaper", "/download", "/capture"];
+const PUBLIC_PREFIXES = ["/login", "/auth", "/api", "/invite", "/wallpaper", "/download", "/capture", "/privacy", "/terms"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));

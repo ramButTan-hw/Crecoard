@@ -93,11 +93,11 @@ export function UserProfileModal({
           {/* Avatar */}
           <div className="absolute left-7 z-10" style={{ bottom: -54 }}>
             <div
-              className="relative flex items-center justify-center rounded-full overflow-hidden border-[5px] text-white font-bold text-4xl select-none"
+              className="relative flex items-center justify-center rounded-full border-[5px] text-white font-bold text-4xl select-none"
               style={{ width: 108, height: 108, background: user.color, borderColor: "var(--surface-raised)" }}
             >
               {user.avatarUrl
-                ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
+                ? <img src={user.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
                 : user.avatarChar}
               {/* Online dot */}
               <span
