@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LayoutGrid, Palette, Share2, Clipboard,
   ScanSearch, SquarePlus, Layers, Package, X,
-  ZoomIn, ZoomOut,
+  ZoomIn, ZoomOut, Camera,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { nanoid } from "nanoid";
@@ -13,6 +13,10 @@ import { ITEM_DEFINITIONS } from "./ItemPalette";
 import { BoardItemWidget } from "./BoardItemWidget";
 import { LiveWallpaper, hasLiveWallpaper } from "./LiveWallpaper";
 import { useCollab } from "@/lib/useCollabSession";
+import { runDueRecurringResets } from "@/lib/recurringBlocks";
+import { exportBoardImage } from "@/lib/boardImage";
+import { registerBlockShotHost, type BlockShotRequest } from "@/lib/blockShot";
+import { BlockShot } from "./BlockShot";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { CursorState } from "@/lib/collaboration";
 import { BoardBox } from "./BoardBox";
@@ -209,6 +213,21 @@ export function BoardCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const { cursors, onCursorMove, broadcastOp } = useCollab();
+
+  // ── Offscreen block shots (archive pictures of a collapsed block's contents) ──
+  // BoardCanvas hosts them so the hidden render sits inside the full provider tree.
+  const [blockShot, setBlockShot] = useState<BlockShotRequest | null>(null);
+  useEffect(() => registerBlockShotHost(setBlockShot), []);
+
+  // ── Recurring block resets ────────────────────────────────────────────────
+  // Run lazily on whichever editing client has the board open: once on open,
+  // then every minute so a board left open overnight still resets at midnight.
+  useEffect(() => {
+    if (!boardId || !canEditBoard || isFinished) return;
+    void runDueRecurringResets(boardId, broadcastOp);
+    const t = setInterval(() => void runDueRecurringResets(boardId, broadcastOp), 60_000);
+    return () => clearInterval(t);
+  }, [boardId, canEditBoard, isFinished, broadcastOp]);
 
   // ── Stale-closure guards for keyboard handlers (M5) ──────────────────────
   const boxesRef = useRef(board?.boxes ?? []);
@@ -801,6 +820,15 @@ export function BoardCanvas() {
       shortcut: "⌘0",
       onClick: handleFitContent,
     },
+    {
+      label: "Save board as image",
+      icon: <Camera size={14} />,
+      onClick: () => {
+        void exportBoardImage(boardId)
+          .then((ok) => { if (!ok) window.alert("Nothing to capture — the board is empty."); })
+          .catch(() => window.alert("Couldn't capture the board as an image."));
+      },
+    },
     "separator" as const,
     {
       label: "Board theme",
@@ -985,6 +1013,14 @@ export function BoardCanvas() {
           y={boardCtx.screenY}
           items={boardMenuItems}
           onClose={() => setBoardCtx(null)}
+        />
+      )}
+
+      {blockShot && (
+        <BlockShot
+          boardId={blockShot.boardId}
+          boxId={blockShot.boxId}
+          onDone={(url) => { blockShot.resolve(url); setBlockShot(null); }}
         />
       )}
     </div>

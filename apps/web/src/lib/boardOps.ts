@@ -66,6 +66,10 @@ function applyBoardOpInner(op: BoardOp): void {
       store.updateItem(boardId, op.boxId as string, op.itemId as string, op.patch as Parameters<typeof store.updateItem>[3]);
       break;
 
+    case "replaceBoxItems":
+      store.replaceBoxItems(boardId, op.boxId as string, op.items as Parameters<typeof store.replaceBoxItems>[2]);
+      break;
+
     case "addBoardItem":
       store.addBoardItem(boardId, op.item as Parameters<typeof store.addBoardItem>[1]);
       break;

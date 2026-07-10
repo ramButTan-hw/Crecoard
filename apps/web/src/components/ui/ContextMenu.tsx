@@ -13,7 +13,7 @@ export interface ContextMenuItem {
   danger?: boolean;
   disabled?: boolean;
   children?: ContextMenuItem[];
-  /** Arbitrary row content rendered instead of the standard button (e.g. sliders) */
+  /** Arbitrary row content rendered instead of the standard button (e.g. color swatches) */
   custom?: React.ReactNode;
 }
 

@@ -1,8 +1,9 @@
 <p align="center">
   <a href="https://crecoard.com">
-    <img src="docs/Crecoard_Banner.png.png" alt="Crecoard" width="100%">
+    <img src="docs/Crecoard_Banner.png" alt="Crecoard" width="100%">
   </a>
 </p>
+
 # Crecoard
 
 **A collaborative visual workspace — an infinite board canvas where you build your workflow out of drag-and-drop blocks, custom widgets, and shared spaces.**

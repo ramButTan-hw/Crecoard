@@ -886,6 +886,21 @@ export const DEFAULT_BOX_STYLE: BoxStyle = {
   padding: 14,
 };
 
+// Recurring reset — the block refreshes its contents back to a saved template at
+// each period boundary (local midnight / Monday / 1st of month). Resets run lazily
+// on whichever client has the board open, so a missed period never double-fires:
+// one reset covers the whole gap and the archive entry is labelled with that span.
+export interface BoxRecurrence {
+  freq: "daily" | "weekly" | "monthly";
+  /** Frozen copy of the block's items used as the fresh state after each reset */
+  templateItems: BlockItem[];
+  /** Save the outgoing contents to the block archive before resetting */
+  autoArchive: boolean;
+  /** Epoch ms of the next period boundary */
+  nextResetAt: number;
+  lastResetAt?: number;
+}
+
 export interface Box {
   id: string;
   boardId: string;
@@ -901,6 +916,9 @@ export interface Box {
   items: BlockItem[];
   style: BoxStyle;
   collapsedStyle?: Partial<BoxStyle>; // overrides style fields when block is on the canvas (not expanded)
+  recurrence?: BoxRecurrence;
+  /** Live items stashed while the recurrence template is open in the expanded editor (presence = template-edit mode) */
+  templateEditStash?: BlockItem[];
   // Deck (slideshow) container
   isDeck?: boolean;
   deckSlideIds?: string[];   // ordered IDs of slide boxes
@@ -1190,6 +1208,9 @@ interface BoardState {
   addItem: (boardId: string, boxId: string, item: Omit<BlockItem, "id"> & { id?: string }) => void;
   removeItem: (boardId: string, boxId: string, itemId: string) => void;
   updateItem: (boardId: string, boxId: string, itemId: string, patch: Partial<BlockItem>) => void;
+  replaceBoxItems: (boardId: string, boxId: string, items: BlockItem[]) => void;
+  beginTemplateEdit: (boardId: string, boxId: string) => void;
+  endTemplateEdit: (boardId: string, boxId: string, save: boolean) => void;
   moveItemUp: (boardId: string, boxId: string, itemId: string) => void;
   moveItemDown: (boardId: string, boxId: string, itemId: string) => void;
   toggleItemInCollapsed: (boardId: string, boxId: string, itemId: string) => void;
@@ -1783,6 +1804,36 @@ export const useBoardStore = create<BoardState>()(
         const box = findBox(s, boardId, boxId);
         const item = box?.items.find((i) => i.id === itemId);
         if (item) Object.assign(item, patch);
+      }),
+
+    replaceBoxItems: (boardId, boxId, items) =>
+      set((s) => {
+        const box = findBox(s, boardId, boxId);
+        if (box) box.items = items;
+      }),
+
+    // ─── Template editing (recurring blocks) ──────────────────────────────────
+    // Swaps the recurrence template into box.items so the normal expanded editor
+    // edits it, while the live contents wait in templateEditStash. endTemplateEdit
+    // writes the result back to the template and restores the live items.
+    beginTemplateEdit: (boardId, boxId) =>
+      set((s) => {
+        const box = findBox(s, boardId, boxId);
+        if (!box?.recurrence) return;
+        if (box.templateEditStash) return; // already mid-edit (resuming an abandoned session)
+        box.templateEditStash = box.items;
+        box.items = JSON.parse(JSON.stringify(box.recurrence.templateItems));
+      }),
+
+    endTemplateEdit: (boardId, boxId, save) =>
+      set((s) => {
+        const box = findBox(s, boardId, boxId);
+        if (!box?.templateEditStash) return;
+        if (save && box.recurrence) {
+          box.recurrence = { ...box.recurrence, templateItems: JSON.parse(JSON.stringify(box.items)) };
+        }
+        box.items = box.templateEditStash;
+        box.templateEditStash = undefined;
       }),
 
     moveItemUp: (boardId, boxId, itemId) =>
