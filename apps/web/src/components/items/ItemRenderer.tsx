@@ -56,6 +56,7 @@ import { supabase } from "@/lib/supabase";
 import { buildIcs } from "@/lib/ics";
 import { REMINDER_LEADS, eventStartDate, createReminder } from "@/lib/reminders";
 import { ContextMenu, ContextMenuEntry } from "@/components/ui/ContextMenu";
+import { PanelSection } from "@/components/ui/PanelSection";
 import { DueChip, MemberAvatar, AssigneeRows, TaskFieldsPopover, MemberPickerPopover, RemindMeControl } from "@/components/items/TaskFields";
 import { htmlToPlainText } from "@/lib/taskFacts";
 import { WIDGET_PERMISSIONS, METHOD_PERMISSIONS, WIDGET_API_VERSION, RateLimiter, clampCoord, clampSize, type WidgetApiResponse, type WidgetApiErrorCode } from "@/lib/widgetApi";
@@ -2941,6 +2942,85 @@ const PHASE_LABELS: Record<string, string> = {
   "long-break": "Long Break",
 };
 
+// ─── Analog clock ─────────────────────────────────────────────────────────────
+
+export type ClockHandStyle = "line" | "bar" | "tapered" | "arrow" | "minimal";
+export const HAND_STYLES: { id: ClockHandStyle; label: string }[] = [
+  { id: "line", label: "Line" },
+  { id: "bar", label: "Bar" },
+  { id: "tapered", label: "Tapered" },
+  { id: "arrow", label: "Arrow" },
+  { id: "minimal", label: "Minimal" },
+];
+
+/** One clock hand: a shape preset (rotated to `angle`) or a custom image if provided. */
+function ClockHand({ angle, length, width, color, style, image, back = 6, scale = 1 }: {
+  angle: number; length: number; width: number; color: string; style: ClockHandStyle; image?: string; back?: number; scale?: number;
+}) {
+  const cx = 50, cy = 50, tip = cy - length, hw = width / 2;
+  if (image) {
+    // Treat the image as a hand pointing UP: its bottom-center pins to the clock
+    // center and it reaches toward the rim by `length` × the user's size. A
+    // generous SQUARE box (not the thin shape width) is the fix for "tiny image":
+    // wide/square/tall designs all render at a sensible size, aspect preserved.
+    const reach = Math.max(6, length * scale);
+    return (
+      <image
+        href={image}
+        x={cx - reach / 2} y={cy - reach} width={reach} height={reach}
+        transform={`rotate(${angle} ${cx} ${cy})`}
+        preserveAspectRatio="xMidYMax meet"
+      />
+    );
+  }
+  let shape: React.ReactNode;
+  const base = cy + back;
+  if (style === "bar") shape = <line x1={cx} y1={base} x2={cx} y2={tip} stroke={color} strokeWidth={width} strokeLinecap="round" />;
+  else if (style === "minimal") shape = <line x1={cx} y1={cy} x2={cx} y2={tip} stroke={color} strokeWidth={Math.max(0.6, width * 0.45)} strokeLinecap="round" />;
+  else if (style === "tapered") shape = <polygon points={`${cx - hw},${cy + back} ${cx + hw},${cy + back} ${cx},${tip}`} fill={color} />;
+  else if (style === "arrow") shape = <><line x1={cx} y1={base} x2={cx} y2={tip + 3} stroke={color} strokeWidth={width} strokeLinecap="round" /><polygon points={`${cx - hw * 2},${tip + 4} ${cx + hw * 2},${tip + 4} ${cx},${tip - 1}`} fill={color} /></>;
+  else shape = <line x1={cx} y1={base} x2={cx} y2={tip} stroke={color} strokeWidth={width} strokeLinecap="round" />; // line
+  return <g transform={`rotate(${angle} ${cx} ${cy})`}>{shape}</g>;
+}
+
+function AnalogClock({ now, item, accent, fontColor, size }: {
+  now: Date; item: BlockItem; accent: string; fontColor: string; size: number;
+}) {
+  const h = now.getHours() % 12, m = now.getMinutes(), s = now.getSeconds();
+  const hourAngle = (h + m / 60) * 30;
+  const minAngle = (m + s / 60) * 6;
+  const secAngle = s * 6;
+  const handColor = item.timerHandColor ?? fontColor;
+  const secColor = item.timerSecondHandColor ?? accent;
+  const showSec = item.timerShowSecondHand !== false;
+  const style = (item.timerHandStyle ?? "line") as ClockHandStyle;
+  const bg = item.timerClockBgImage;
+  const showTicks = item.timerShowClockTicks;
+  const handImgScale = Math.max(0.4, Math.min(2.6, (item.timerHandImageSize ?? 100) / 100));
+  const clipId = `clkclip-${item.id}`;
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} style={{ maxWidth: "100%", maxHeight: "100%" }}>
+      <defs><clipPath id={clipId}><circle cx="50" cy="50" r="49" /></clipPath></defs>
+      {bg ? (
+        <image href={bg} x="0" y="0" width="100" height="100" clipPath={`url(#${clipId})`}
+          preserveAspectRatio={item.timerClockBgImageSize === "contain" ? "xMidYMid meet" : "xMidYMid slice"} />
+      ) : (
+        <circle cx="50" cy="50" r="48" fill={item.timerBgColor ?? "transparent"} stroke={handColor + "33"} strokeWidth="1.2" />
+      )}
+      {showTicks && Array.from({ length: 12 }).map((_, i) => {
+        const a = (i * 30) * Math.PI / 180;
+        const r1 = 45, r2 = i % 3 === 0 ? 38 : 42;
+        return <line key={i} x1={50 + r1 * Math.sin(a)} y1={50 - r1 * Math.cos(a)} x2={50 + r2 * Math.sin(a)} y2={50 - r2 * Math.cos(a)}
+          stroke={handColor + (i % 3 === 0 ? "" : "80")} strokeWidth={i % 3 === 0 ? 1.6 : 0.9} strokeLinecap="round" />;
+      })}
+      <ClockHand angle={hourAngle} length={24} width={3.2} color={handColor} style={style} image={item.timerHourHandImage} scale={handImgScale} />
+      <ClockHand angle={minAngle} length={34} width={2.4} color={handColor} style={style} image={item.timerMinuteHandImage} scale={handImgScale} />
+      {showSec && <ClockHand angle={secAngle} length={39} width={1.3} color={secColor} style={style === "bar" || style === "arrow" ? "line" : style} image={item.timerSecondHandImage} back={9} scale={handImgScale} />}
+      <circle cx="50" cy="50" r="2.2" fill={secColor} />
+    </svg>
+  );
+}
+
 function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextItems }: { item: BlockItem; upd: (p: Partial<BlockItem>) => void; collapsed?: boolean; isFinished?: boolean; containerH?: number; extraContextItems?: ContextMenuEntry[] }) {
   const mode = item.timerMode ?? "countdown";
   const total = item.timerSeconds ?? 300;
@@ -3080,12 +3160,27 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
     progress = effectiveTotal > 0 ? remaining / effectiveTotal : 0;
   } else {
     displayTime = fmtSecs(elapsed);
-    progress = 1;
+    const target = item.timerStopwatchTargetSecs ?? 0;
+    progress = target > 0 ? Math.min(1, elapsed / target) : 1;
   }
 
+  // Progress only means something for a countdown, or a stopwatch WITH a target.
+  const swTarget = item.timerStopwatchTargetSecs ?? 0;
+  const showProgress = mode === "countdown" || (mode === "stopwatch" && swTarget > 0);
+  // "Used up" fraction for the depletion styles (bg-dim / bg-sweep): countdown
+  // depletes as it runs out; a stopwatch fills toward its target.
+  const usedFrac = mode === "stopwatch" ? progress : (1 - progress);
+
   const dateStr = mode === "clock" && item.timerShowDate
-    ? now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+    ? (() => {
+        const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+        if (item.timerDateShowWeekday !== false) opts.weekday = "short";
+        if (item.timerDateShowYear) opts.year = "numeric";
+        return now.toLocaleDateString(undefined, opts);
+      })()
     : null;
+
+  const isAnalog = mode === "clock" && item.timerClockFace === "analog";
 
   const label = item.timerLabel?.trim();
 
@@ -3162,7 +3257,8 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
         const dir = item.timerProgressDir ?? "btt";
         const pc = item.timerProgressColor ?? accent;
         const pct = progress * 100;
-        if (mode !== "countdown" || ps === "none" || ps === "bar" || ps === "thick-bar" || ps === "ring") return null;
+        const freshPct = (1 - usedFrac) * 100; // sweep edge: fresh-vs-used boundary
+        if (!showProgress || ps === "none" || ps === "bar" || ps === "thick-bar" || ps === "ring") return null;
 
         if (ps === "bg-fill") {
           // Accent-tinted fill that shrinks as time runs out
@@ -3182,8 +3278,8 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
         }
 
         if (ps === "bg-dim") {
-          // Uniform dark-grey overlay that intensifies as time runs out (1-progress)
-          const alpha = (1 - progress) * 0.78;
+          // Uniform dark overlay that intensifies as time is used up
+          const alpha = usedFrac * 0.78;
           return (
             <div style={{
               position: "absolute", inset: 0, zIndex: 1, borderRadius: br, pointerEvents: "none",
@@ -3201,10 +3297,10 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
             backdropFilter: "grayscale(1) brightness(0.55)",
             WebkitBackdropFilter: "grayscale(1) brightness(0.55)",
           };
-          if (dir === "ltr")      { expiredStyle.left = `${pct}%`; expiredStyle.top = 0; expiredStyle.bottom = 0; expiredStyle.right = 0; }
-          else if (dir === "rtl") { expiredStyle.right = `${pct}%`; expiredStyle.top = 0; expiredStyle.bottom = 0; expiredStyle.left = 0; }
-          else if (dir === "ttb") { expiredStyle.top = `${pct}%`; expiredStyle.left = 0; expiredStyle.right = 0; expiredStyle.bottom = 0; }
-          else                    { expiredStyle.bottom = `${pct}%`; expiredStyle.left = 0; expiredStyle.right = 0; expiredStyle.top = 0; }
+          if (dir === "ltr")      { expiredStyle.left = `${freshPct}%`; expiredStyle.top = 0; expiredStyle.bottom = 0; expiredStyle.right = 0; }
+          else if (dir === "rtl") { expiredStyle.right = `${freshPct}%`; expiredStyle.top = 0; expiredStyle.bottom = 0; expiredStyle.left = 0; }
+          else if (dir === "ttb") { expiredStyle.top = `${freshPct}%`; expiredStyle.left = 0; expiredStyle.right = 0; expiredStyle.bottom = 0; }
+          else                    { expiredStyle.bottom = `${freshPct}%`; expiredStyle.left = 0; expiredStyle.right = 0; expiredStyle.top = 0; }
           return (
             <div style={{ position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", borderRadius: br, pointerEvents: "none" }}>
               <div style={expiredStyle} />
@@ -3216,7 +3312,7 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
       })()}
 
       {/* Ring progress (SVG, sits above bg layers, below content) */}
-      {mode === "countdown" && (item.timerProgressStyle ?? "bar") === "ring" && (() => {
+      {showProgress && (item.timerProgressStyle ?? "bar") === "ring" && (() => {
         const pc = item.timerProgressColor ?? accent;
         const r = 46;
         const circumference = 2 * Math.PI * r;
@@ -3262,19 +3358,34 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
           <span className="text-xs font-medium tracking-wide" style={{ color: fontColor + "70" }}>{label}</span>
         )}
 
-        {/* Number */}
-        <span
-          className="font-mono tabular-nums leading-none transition-all duration-300"
-          style={{
-            fontSize, color: fontColor, fontFamily: fontFamily || undefined, fontWeight: bold ? 700 : 400,
-            ...(completed ? { textShadow: `0 0 16px ${accent}, 0 0 32px ${accent}88`, color: accent } : {}),
-          }}
-        >
-          {displayTime}
-        </span>
+        {/* Date above the time (clock only) */}
+        {dateStr && (item.timerDatePosition ?? "below") === "above" && (
+          <span style={{
+            fontSize: item.timerDateFontSize ?? 13,
+            color: item.timerDateColor ?? (fontColor + "99"),
+            fontFamily: item.timerDateFontFamily || undefined,
+            fontWeight: item.timerDateBold ? 700 : 400,
+          }}>{dateStr}</span>
+        )}
+
+        {/* Time — analog clock face, or the digital number */}
+        {isAnalog ? (
+          <AnalogClock now={now} item={item} accent={accent} fontColor={fontColor}
+            size={Math.min(360, Math.max(120, (item.timerFontSize ?? 48) * 3.4))} />
+        ) : (
+          <span
+            className="font-mono tabular-nums leading-none transition-all duration-300"
+            style={{
+              fontSize, color: fontColor, fontFamily: fontFamily || undefined, fontWeight: bold ? 700 : 400,
+              ...(completed ? { textShadow: `0 0 16px ${accent}, 0 0 32px ${accent}88`, color: accent } : {}),
+            }}
+          >
+            {displayTime}
+          </span>
+        )}
 
         {/* Progress bar — bar / thick-bar styles only */}
-        {mode === "countdown" && (() => {
+        {showProgress && (() => {
           const ps = item.timerProgressStyle ?? "bar";
           const pc = item.timerProgressColor ?? accent;
           if (ps === "bar") return (
@@ -3290,8 +3401,15 @@ function TimerItem({ item, upd, collapsed, isFinished, containerH, extraContextI
           return null;
         })()}
 
-        {/* Date (clock only) */}
-        {dateStr && <span className="text-xs" style={{ color: fontColor + "60" }}>{dateStr}</span>}
+        {/* Date below the time (clock only) */}
+        {dateStr && (item.timerDatePosition ?? "below") === "below" && (
+          <span style={{
+            fontSize: item.timerDateFontSize ?? 13,
+            color: item.timerDateColor ?? (fontColor + "99"),
+            fontFamily: item.timerDateFontFamily || undefined,
+            fontWeight: item.timerDateBold ? 700 : 400,
+          }}>{dateStr}</span>
+        )}
 
         {/* Label below */}
         {showLabel && label && labelPos === "bottom" && (
@@ -3359,6 +3477,33 @@ function SliderRow({ label, value, min, max, step = 1, onChange }: { label: stri
   );
 }
 
+// Compact "URL or upload" image input, reused for the clock face and hand images.
+function TimerImageInput({ value, onChange, placeholder }: { value?: string; onChange: (url?: string) => void; placeholder: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        className="flex-1 min-w-0 rounded border border-[var(--border)] bg-[var(--surface-overlay)] px-2 py-1 text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] transition-colors"
+        placeholder={value?.startsWith("data:") ? "Uploaded file" : placeholder}
+        value={value?.startsWith("data:") ? "" : (value ?? "")}
+        onChange={(e) => onChange(e.target.value || undefined)}
+      />
+      <label className="flex items-center justify-center cursor-pointer rounded border border-[var(--border)] bg-[var(--surface-overlay)] px-1.5 py-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--text-muted)] transition-colors flex-shrink-0">
+        <Upload size={10} />
+        <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) applyImageUpload(f, (url) => onChange(url)); e.target.value = ""; }} />
+      </label>
+      {value && <button onClick={() => onChange(undefined)} className="flex-shrink-0 text-[var(--text-muted)] hover:text-red-400 transition-colors"><XIcon size={11} /></button>}
+    </div>
+  );
+}
+
+function ColorDot({ color, onChange }: { color: string; onChange: (c: string) => void }) {
+  return (
+    <span className="relative h-5 w-5 rounded border border-white/20 overflow-hidden flex-shrink-0 inline-block" style={{ backgroundColor: color }}>
+      <input type="color" value={/^#/.test(color) ? color : "#ffffff"} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+    </span>
+  );
+}
+
 export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Partial<BlockItem>) => void }) {
   const mode = item.timerMode ?? "countdown";
   const total = item.timerSeconds ?? 300;
@@ -3372,10 +3517,6 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
   const setDuration = (h: number, m: number, s: number) => {
     upd({ timerSeconds: Math.max(1, h * 3600 + m * 60 + s) });
   };
-
-  const PLabel = ({ children }: { children: React.ReactNode }) => (
-    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{children}</p>
-  );
 
   const ToggleGroup = ({ options, value, onChange }: { options: { label: string; value: string }[]; value: string; onChange: (v: string) => void }) => (
     <div className="flex gap-1">
@@ -3399,11 +3540,19 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
   const accent = item.timerAccentColor ?? "#d59ee8";
 
   return (
-    <div className="flex flex-col gap-5 p-3 text-xs">
+    <div className="flex flex-col">
+
+      {/* Mode */}
+      <PanelSection title="Mode" id="timer-mode" defaultOpen>
+        <ToggleGroup
+          options={[{ label: "Countdown", value: "countdown" }, { label: "Stopwatch", value: "stopwatch" }, { label: "Clock", value: "clock" }]}
+          value={mode}
+          onChange={(v) => upd({ timerMode: v as BlockItem["timerMode"] })}
+        />
+      </PanelSection>
 
       {/* Quick presets */}
-      <section>
-        <PLabel>Quick Presets</PLabel>
+      <PanelSection title="Quick Presets" id="timer-presets">
         <div className="grid grid-cols-2 gap-1.5">
           {TIMER_PRESETS.map((p) => (
             <button
@@ -3427,22 +3576,11 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             </button>
           ))}
         </div>
-      </section>
-
-      {/* Mode */}
-      <section>
-        <PLabel>Mode</PLabel>
-        <ToggleGroup
-          options={[{ label: "Countdown", value: "countdown" }, { label: "Stopwatch", value: "stopwatch" }, { label: "Clock", value: "clock" }]}
-          value={mode}
-          onChange={(v) => upd({ timerMode: v as BlockItem["timerMode"] })}
-        />
-      </section>
+      </PanelSection>
 
       {/* Pomodoro cycle (countdown only) */}
       {mode === "countdown" && (
-        <section>
-          <PLabel>Cycle mode</PLabel>
+        <PanelSection title="Cycle mode" id="timer-cycle">
           <label className="flex items-center gap-2 cursor-pointer mb-3">
             <input
               type="checkbox"
@@ -3486,12 +3624,11 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
               />
             </div>
           )}
-        </section>
+        </PanelSection>
       )}
 
       {/* Collaboration sync */}
-      <section>
-        <PLabel>Collaboration</PLabel>
+      <PanelSection title="Collaboration" id="timer-collab">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -3506,12 +3643,11 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             Connect Supabase to enable real-time sync.
           </p>
         )}
-      </section>
+      </PanelSection>
 
       {/* Duration (countdown only) */}
       {mode === "countdown" && !item.timerPomodoroEnabled && (
-        <section>
-          <PLabel>Duration</PLabel>
+        <PanelSection title="Duration" id="timer-duration">
           <div className="flex items-center gap-1.5">
             <input type="number" min={0} value={totalH}
               onChange={(e) => setDuration(Number(e.target.value), totalM, totalS)}
@@ -3529,34 +3665,168 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             />
             <span className="text-[var(--text-muted)]">s</span>
           </div>
-        </section>
+        </PanelSection>
       )}
 
       {/* Clock options */}
       {mode === "clock" && (
-        <section>
-          <PLabel>Clock format</PLabel>
+        <PanelSection title="Clock face" id="timer-clock">
           <div className="flex flex-col gap-2">
             <ToggleGroup
-              options={[{ label: "12 h", value: "12" }, { label: "24 h", value: "24" }]}
-              value={item.timerFormat24h ? "24" : "12"}
-              onChange={(v) => upd({ timerFormat24h: v === "24" })}
+              options={[{ label: "Digital", value: "digital" }, { label: "Analog", value: "analog" }]}
+              value={item.timerClockFace ?? "digital"}
+              onChange={(v) => upd({ timerClockFace: v as "digital" | "analog" })}
             />
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={item.timerShowSeconds !== false} onChange={(e) => upd({ timerShowSeconds: e.target.checked })} className="accent-[var(--accent)]" />
-              <span className="text-[var(--text-secondary)]">Show seconds</span>
-            </label>
+
+            {/* Digital-only format options */}
+            {(item.timerClockFace ?? "digital") === "digital" && (
+              <>
+                <ToggleGroup
+                  options={[{ label: "12 h", value: "12" }, { label: "24 h", value: "24" }]}
+                  value={item.timerFormat24h ? "24" : "12"}
+                  onChange={(v) => upd({ timerFormat24h: v === "24" })}
+                />
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={item.timerShowSeconds !== false} onChange={(e) => upd({ timerShowSeconds: e.target.checked })} className="accent-[var(--accent)]" />
+                  <span className="text-[var(--text-secondary)]">Show seconds</span>
+                </label>
+              </>
+            )}
+
+            {/* Analog options */}
+            {item.timerClockFace === "analog" && (
+              <div className="flex flex-col gap-2.5 rounded-lg border border-[var(--border)] p-2.5">
+                <div>
+                  <p className="mb-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Hand shape</p>
+                  <div className="grid grid-cols-5 gap-1">
+                    {HAND_STYLES.map((h) => (
+                      <button key={h.id} onClick={() => upd({ timerHandStyle: h.id })}
+                        className={cn("rounded py-1 text-[10px] transition-colors",
+                          (item.timerHandStyle ?? "line") === h.id ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-overlay)] text-[var(--text-muted)] hover:text-[var(--text-primary)]")}>
+                        {h.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-1.5"><span className="text-[11px] text-[var(--text-secondary)]">Hands</span><ColorDot color={item.timerHandColor ?? (item.timerFontColor ?? "#f2f2f2")} onChange={(c) => upd({ timerHandColor: c })} /></label>
+                  <label className="flex items-center gap-1.5"><span className="text-[11px] text-[var(--text-secondary)]">Second</span><ColorDot color={item.timerSecondHandColor ?? accent} onChange={(c) => upd({ timerSecondHandColor: c })} /></label>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={item.timerShowSecondHand !== false} onChange={(e) => upd({ timerShowSecondHand: e.target.checked })} className="accent-[var(--accent)]" />
+                  <span className="text-[11px] text-[var(--text-secondary)]">Show second hand</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!item.timerShowClockTicks} onChange={(e) => upd({ timerShowClockTicks: e.target.checked })} className="accent-[var(--accent)]" />
+                  <span className="text-[11px] text-[var(--text-secondary)]">Show tick marks</span>
+                </label>
+                <div>
+                  <p className="mb-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Clock face image</p>
+                  <TimerImageInput value={item.timerClockBgImage} onChange={(u) => upd({ timerClockBgImage: u })} placeholder="Face image URL…" />
+                  {item.timerClockBgImage && (
+                    <div className="mt-1.5 flex gap-1">
+                      {(["cover", "contain"] as const).map((s) => (
+                        <button key={s} onClick={() => upd({ timerClockBgImageSize: s })}
+                          className={cn("flex-1 rounded py-1 text-[10px] capitalize transition-colors",
+                            (item.timerClockBgImageSize ?? "cover") === s ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-overlay)] text-[var(--text-muted)] hover:text-[var(--text-primary)]")}>{s}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="mb-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Custom hand images (optional)</p>
+                  <div className="flex flex-col gap-1.5">
+                    <TimerImageInput value={item.timerHourHandImage} onChange={(u) => upd({ timerHourHandImage: u })} placeholder="Hour hand…" />
+                    <TimerImageInput value={item.timerMinuteHandImage} onChange={(u) => upd({ timerMinuteHandImage: u })} placeholder="Minute hand…" />
+                    <TimerImageInput value={item.timerSecondHandImage} onChange={(u) => upd({ timerSecondHandImage: u })} placeholder="Second hand…" />
+                  </div>
+                  {(item.timerHourHandImage || item.timerMinuteHandImage || item.timerSecondHandImage) && (
+                    <div className="mt-2">
+                      <p className="mb-1 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+                        <span>Hand image size</span>
+                        <span className="tabular-nums">{item.timerHandImageSize ?? 100}%</span>
+                      </p>
+                      <input type="range" min={40} max={260} step={5}
+                        value={item.timerHandImageSize ?? 100}
+                        onChange={(e) => upd({ timerHandImageSize: Number(e.target.value) })}
+                        className="w-full accent-[var(--accent)]" />
+                    </div>
+                  )}
+                  <p className="mt-1 text-[10px] text-[var(--text-muted)]">Hand images should point up (12 o&rsquo;clock), pivoting at the bottom-center. They override the shape.</p>
+                </div>
+              </div>
+            )}
+
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={!!item.timerShowDate} onChange={(e) => upd({ timerShowDate: e.target.checked })} className="accent-[var(--accent)]" />
               <span className="text-[var(--text-secondary)]">Show date</span>
             </label>
           </div>
-        </section>
+        </PanelSection>
+      )}
+
+      {/* Date customization */}
+      {mode === "clock" && item.timerShowDate && (
+        <PanelSection title="Date" id="timer-date">
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={item.timerDateShowWeekday !== false} onChange={(e) => upd({ timerDateShowWeekday: e.target.checked })} className="accent-[var(--accent)]" />
+              <span className="text-[var(--text-secondary)]">Show weekday</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!item.timerDateShowYear} onChange={(e) => upd({ timerDateShowYear: e.target.checked })} className="accent-[var(--accent)]" />
+              <span className="text-[var(--text-secondary)]">Show year</span>
+            </label>
+            <div>
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Position</p>
+              <ToggleGroup
+                options={[{ label: "Above time", value: "above" }, { label: "Below time", value: "below" }]}
+                value={item.timerDatePosition ?? "below"}
+                onChange={(v) => upd({ timerDatePosition: v as "above" | "below" })}
+              />
+            </div>
+            <SliderRow label="Size" value={item.timerDateFontSize ?? 13} min={8} max={40} onChange={(v) => upd({ timerDateFontSize: v })} />
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!item.timerDateBold} onChange={(e) => upd({ timerDateBold: e.target.checked })} className="accent-[var(--accent)]" />
+                <span className="text-[11px] text-[var(--text-secondary)]">Bold</span>
+              </label>
+              <label className="flex items-center gap-1.5">
+                <span className="text-[11px] text-[var(--text-secondary)]">Color</span>
+                <ColorDot color={item.timerDateColor ?? (item.timerFontColor ?? "#f2f2f2")} onChange={(c) => upd({ timerDateColor: c })} />
+                {item.timerDateColor && <button onClick={() => upd({ timerDateColor: undefined })} className="text-[10px] text-[var(--text-muted)] hover:text-red-400">reset</button>}
+              </label>
+            </div>
+            <FontPicker value={item.timerDateFontFamily ?? ""} onChange={(f) => upd({ timerDateFontFamily: f || undefined })} />
+          </div>
+        </PanelSection>
+      )}
+
+      {/* Stopwatch target */}
+      {mode === "stopwatch" && (
+        <PanelSection title="Target (optional)" id="timer-target">
+          <p className="mb-2 text-[11px] text-[var(--text-muted)]">Set a goal time so the progress indicator fills as you approach it.</p>
+          {(() => {
+            const t = item.timerStopwatchTargetSecs ?? 0;
+            const tm = Math.floor(t / 60), ts = t % 60;
+            const set = (m: number, s: number) => { const v = Math.max(0, m * 60 + s); upd({ timerStopwatchTargetSecs: v > 0 ? v : undefined }); };
+            return (
+              <div className="flex items-center gap-1.5">
+                <input type="number" min={0} value={tm} onChange={(e) => set(Number(e.target.value), ts)}
+                  className="w-12 rounded border border-[var(--border)] bg-[var(--surface)] px-1.5 py-1 text-center text-xs text-[var(--text-primary)] outline-none" />
+                <span className="text-[var(--text-muted)]">m</span>
+                <input type="number" min={0} max={59} value={ts} onChange={(e) => set(tm, Number(e.target.value))}
+                  className="w-12 rounded border border-[var(--border)] bg-[var(--surface)] px-1.5 py-1 text-center text-xs text-[var(--text-primary)] outline-none" />
+                <span className="text-[var(--text-muted)]">s</span>
+                {t > 0 && <button onClick={() => upd({ timerStopwatchTargetSecs: undefined })} className="ml-1 text-[11px] text-[var(--text-muted)] hover:text-red-400 transition-colors">clear</button>}
+              </div>
+            );
+          })()}
+        </PanelSection>
       )}
 
       {/* Label */}
-      <section>
-        <PLabel>Label</PLabel>
+      <PanelSection title="Label" id="timer-label">
         <input
           className="mb-2 w-full rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
           placeholder="Label text…"
@@ -3574,12 +3844,11 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             onChange={(v) => upd({ timerLabelPosition: v as "top" | "bottom" })}
           />
         </div>
-      </section>
+      </PanelSection>
 
-      {/* Progress indicator */}
-      {mode !== "clock" && (
-        <section>
-          <PLabel>Progress indicator</PLabel>
+      {/* Progress indicator — countdown always; stopwatch only once a target is set */}
+      {(mode === "countdown" || (mode === "stopwatch" && (item.timerStopwatchTargetSecs ?? 0) > 0)) && (
+        <PanelSection title="Progress indicator" id="timer-progress">
           <div className="flex flex-col gap-2">
             {/* Style grid */}
             <div className="grid grid-cols-3 gap-1.5">
@@ -3650,12 +3919,11 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
               </div>
             )}
           </div>
-        </section>
+        </PanelSection>
       )}
 
       {/* Accent color */}
-      <section>
-        <PLabel>Accent color</PLabel>
+      <PanelSection title="Accent color" id="timer-accent">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setOpenPicker((v) => v === "accent" ? null : "accent")}
@@ -3669,11 +3937,10 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             <input type="color" value={accent} onChange={(e) => upd({ timerAccentColor: e.target.value })} className="h-8 w-full cursor-pointer rounded border-0 bg-transparent" />
           </div>
         )}
-      </section>
+      </PanelSection>
 
       {/* Font */}
-      <section>
-        <PLabel>Font color</PLabel>
+      <PanelSection title="Font color" id="timer-fontcolor">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setOpenPicker((v) => v === "font" ? null : "font")}
@@ -3687,11 +3954,10 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             <input type="color" value={item.timerFontColor ?? "#f2f2f2"} onChange={(e) => upd({ timerFontColor: e.target.value })} className="h-8 w-full cursor-pointer rounded border-0 bg-transparent" />
           </div>
         )}
-      </section>
+      </PanelSection>
 
       {/* Typography */}
-      <section>
-        <PLabel>Typography</PLabel>
+      <PanelSection title="Typography" id="timer-typography">
         <div className="flex flex-col gap-2">
           <SliderRow label="Size" value={item.timerFontSize ?? 48} min={20} max={120} onChange={(v) => upd({ timerFontSize: v })} />
           <label className="flex items-center gap-2 cursor-pointer">
@@ -3702,17 +3968,15 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             <FontPicker value={item.timerFontFamily ?? ""} onChange={(f) => upd({ timerFontFamily: f || undefined })} />
           </div>
         </div>
-      </section>
+      </PanelSection>
 
       {/* Shape */}
-      <section>
-        <PLabel>Shape</PLabel>
+      <PanelSection title="Shape" id="timer-shape">
         <SliderRow label="Corners" value={item.timerBorderRadius ?? 0} min={0} max={40} onChange={(v) => upd({ timerBorderRadius: v })} />
-      </section>
+      </PanelSection>
 
       {/* Border */}
-      <section>
-        <PLabel>Border</PLabel>
+      <PanelSection title="Border" id="timer-border">
         <div className="flex flex-col gap-2">
           <SliderRow label="Width" value={item.timerBorderWidth ?? 0} min={0} max={8} onChange={(v) => upd({ timerBorderWidth: v })} />
           {(item.timerBorderWidth ?? 0) > 0 && (
@@ -3740,11 +4004,10 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             </>
           )}
         </div>
-      </section>
+      </PanelSection>
 
       {/* Background */}
-      <section>
-        <PLabel>Background</PLabel>
+      <PanelSection title="Background" id="timer-bg">
         <div className="flex flex-col gap-2">
           {/* Color */}
           <label className="flex items-center justify-between gap-2 cursor-pointer rounded-lg border border-[var(--border)] px-2.5 py-2 hover:border-[var(--text-muted)] transition-colors">
@@ -3820,9 +4083,7 @@ export function TimerStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             </div>
           )}
         </div>
-      </section>
-
-
+      </PanelSection>
     </div>
   );
 }
@@ -3913,9 +4174,8 @@ export function ImageStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
   };
 
   return (
-    <div className="flex flex-col gap-4 p-3 text-xs">
-      <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Source</p>
+    <div className="flex flex-col">
+      <PanelSection title="Source" id="image-source" defaultOpen>
         <input
           className="mb-1.5 w-full rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
           placeholder="Image URL…"
@@ -3931,10 +4191,9 @@ export function ImageStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             <button onClick={() => upd({ imageUrl: "" })} className="rounded border border-[var(--border)] px-2.5 text-xs text-[var(--text-muted)] transition-colors hover:text-red-400">Clear</button>
           )}
         </div>
-      </div>
+      </PanelSection>
 
-      <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Fit</p>
+      <PanelSection title="Fit" id="image-fit" defaultOpen>
         <div className="flex gap-1">
           {(["cover", "contain", "fill"] as const).map((f) => (
             <button key={f} onClick={() => upd({ imageFit: f })}
@@ -3943,10 +4202,9 @@ export function ImageStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             </button>
           ))}
         </div>
-      </div>
+      </PanelSection>
 
-      <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Frame</p>
+      <PanelSection title="Frame" id="image-frame">
         <div className="flex flex-col gap-2">
           <label className="flex items-center gap-2">
             <span className="w-14 text-[var(--text-muted)]">Radius</span>
@@ -3965,17 +4223,16 @@ export function ImageStylePanel({ item, upd }: { item: BlockItem; upd: (p: Parti
             <span className="flex-1 text-[var(--text-secondary)]">Border color</span>
           </label>
         </div>
-      </div>
+      </PanelSection>
 
-      <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Caption</p>
+      <PanelSection title="Caption" id="image-caption">
         <input
           className="w-full rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
           placeholder="Optional caption…"
           value={item.imageCaption ?? ""}
           onChange={(e) => upd({ imageCaption: e.target.value || undefined })}
         />
-      </div>
+      </PanelSection>
     </div>
   );
 }

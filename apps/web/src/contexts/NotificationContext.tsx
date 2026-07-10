@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import { nanoid } from "nanoid";
+import { readUserPrefs } from "@/lib/userPrefs";
 
 export interface ChatToast {
   id: string;
@@ -54,19 +55,32 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // Don't toast for items the user is actively viewing
     if (activeItems.current.has(n.itemId)) return;
 
-    const id = nanoid(8);
-    const toast: ChatToast = { ...n, id, createdAt: Date.now() };
+    // Global notification settings (Settings → Notifications) gate what shows:
+    // notifyLevel picks all/mentions/none; the mentions toggle can silence even those.
+    const prefs = readUserPrefs();
+    const toastAllowed =
+      prefs.notifyLevel === "all" ||
+      (prefs.notifyLevel === "mentions" && n.isMention && prefs.notifyMentions);
+    const suppressedMention = n.isMention && !prefs.notifyMentions;
 
-    setToasts((prev) => {
-      // Cap at 5 visible toasts — drop the oldest
-      const next = [...prev, toast];
-      return next.length > 5 ? next.slice(next.length - 5) : next;
-    });
+    if (toastAllowed && !suppressedMention) {
+      const id = nanoid(8);
+      const toast: ChatToast = { ...n, id, createdAt: Date.now() };
 
-    setUnread((prev) => ({ ...prev, [n.itemId]: (prev[n.itemId] ?? 0) + 1 }));
+      setToasts((prev) => {
+        // Cap at 5 visible toasts — drop the oldest
+        const next = [...prev, toast];
+        return next.length > 5 ? next.slice(next.length - 5) : next;
+      });
 
-    // Auto-dismiss after 4 s
-    timers.current[id] = setTimeout(() => dismiss(id), 4000);
+      // Auto-dismiss after 4 s
+      timers.current[id] = setTimeout(() => dismiss(id), 4000);
+    }
+
+    // Unread badge counting has its own toggle
+    if (prefs.notifyBadge) {
+      setUnread((prev) => ({ ...prev, [n.itemId]: (prev[n.itemId] ?? 0) + 1 }));
+    }
   }, [dismiss]);
 
   const markRead = useCallback((itemId: string) => {

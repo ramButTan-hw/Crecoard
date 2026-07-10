@@ -6,6 +6,7 @@ import {
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { useUser } from "@/contexts/UserContext";
+import { readUserPrefs } from "@/lib/userPrefs";
 import type { PresenceStatus } from "@/types/server";
 
 function isSupabaseReady(): boolean {
@@ -70,15 +71,25 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
       setOnline(map);
     });
 
-    void channel.subscribe(async (status) => {
-      if (status !== "SUBSCRIBED") return;
+    // Effective broadcast status: the privacy master switch (Settings → Privacy →
+    // "Show online status") forces you invisible regardless of your chosen status.
+    const applyTracking = () => {
       const cur = savedStatus();
-      if (cur === "offline") await channel.untrack();
-      else await channel.track({ status: cur });
-    });
+      if (cur === "offline" || !readUserPrefs().showOnlineStatus) void channel.untrack();
+      else void channel.track({ status: cur });
+    };
+
+    void channel.subscribe((status) => { if (status === "SUBSCRIBED") applyTracking(); });
+
+    // React to the privacy toggle changing (same tab + across tabs)
+    const onPrefs = () => applyTracking();
+    window.addEventListener("crecoard:prefs-changed", onPrefs);
+    window.addEventListener("storage", onPrefs);
 
     return () => {
       channelRef.current = null;
+      window.removeEventListener("crecoard:prefs-changed", onPrefs);
+      window.removeEventListener("storage", onPrefs);
       void supabase.removeChannel(channel);
     };
   }, [isLoggedIn, userId]);
@@ -88,7 +99,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, s);
     const ch = channelRef.current;
     if (!ch) return;
-    if (s === "offline") void ch.untrack();
+    if (s === "offline" || !readUserPrefs().showOnlineStatus) void ch.untrack();
     else void ch.track({ status: s });
   }, []);
 
