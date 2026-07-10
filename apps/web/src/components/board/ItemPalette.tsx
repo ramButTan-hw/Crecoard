@@ -647,16 +647,19 @@ export function ItemPalette({ onPick, desktop }: { onPick?: (def: (typeof ITEM_D
             </button>
           </div>
         )}
-        {!mobile && (
-          <div className="px-2 pb-1.5">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search items…"
-              className="w-full rounded border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
-            />
-          </div>
-        )}
+        {/* Search — on mobile too, so a full board's ~20 items are one type away
+            instead of a long scroll. */}
+        <div className={cn(mobile ? "px-3 pb-2 pt-1" : "px-2 pb-1.5")}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search items…"
+            className={cn(
+              "w-full rounded border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]",
+              mobile ? "px-3 py-2 text-sm" : "px-2 py-1 text-[11px]"
+            )}
+          />
+        </div>
         <div className="pb-2">
           {beginnerMode ? (
             <>
@@ -678,20 +681,21 @@ export function ItemPalette({ onPick, desktop }: { onPick?: (def: (typeof ITEM_D
                 const expanded = !!q || openGroups.has(g);
                 return (
                   <div key={g}>
-                    {!mobile ? (
-                      <button
-                        onClick={() => toggleGroup(g)}
-                        disabled={!!q}
-                        className="flex w-full items-center gap-1.5 px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] opacity-70 transition-opacity hover:opacity-100"
-                      >
-                        <ChevronRight size={11} className={cn("transition-transform", expanded && "rotate-90")} />
-                        <span className="flex-1 text-left">{g}</span>
-                        <span className="font-normal opacity-70">{defs.length}</span>
-                      </button>
-                    ) : (
-                      <p className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] opacity-70">{g}</p>
-                    )}
-                    {(expanded || mobile) && defs.map((def) => (
+                    {/* Collapsible section header — on mobile too, so the sheet opens
+                        calm (just "Basics") instead of dumping all ~20 items. */}
+                    <button
+                      onClick={() => toggleGroup(g)}
+                      disabled={!!q}
+                      className={cn(
+                        "flex w-full items-center gap-1.5 px-3 font-semibold uppercase tracking-wider text-[var(--text-muted)] opacity-70 transition-opacity hover:opacity-100",
+                        mobile ? "py-2.5 text-[11px]" : "pb-0.5 pt-2 text-[10px]"
+                      )}
+                    >
+                      <ChevronRight size={mobile ? 13 : 11} className={cn("transition-transform", expanded && "rotate-90")} />
+                      <span className="flex-1 text-left">{g}</span>
+                      <span className="font-normal opacity-70">{defs.length}</span>
+                    </button>
+                    {expanded && defs.map((def) => (
                       <DraggableItem key={def.key ?? def.type} def={def} selectedBoxId={selectedBoxId} onPick={onPick} tapMode={mobile} dense={!mobile} />
                     ))}
                   </div>
