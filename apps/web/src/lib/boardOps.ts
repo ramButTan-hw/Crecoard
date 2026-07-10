@@ -47,7 +47,10 @@ function applyBoardOpInner(op: BoardOp): void {
       break;
 
     case "bringToFront":
-      store.bringToFront(boardId, op.boxId as string);
+      // Only ever broadcast from an explicit "Bring to front" (incidental
+      // select/right-click raises are not broadcast), so apply it explicitly
+      // to lift a peer's box even if it was pinned to the back.
+      store.bringToFront(boardId, op.boxId as string, true);
       break;
 
     case "sendToBack":

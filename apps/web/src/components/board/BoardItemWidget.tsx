@@ -220,7 +220,7 @@ export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props
     {
       label: "Bring to front",
       icon: <ArrowUpToLine size={14} />,
-      onClick: () => bringBoardItemToFront(boardId, item.id),
+      onClick: () => bringBoardItemToFront(boardId, item.id, true), // explicit — clears "keep behind"
     },
     {
       label: "Send to back",
@@ -267,7 +267,7 @@ export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props
           {
             label: "Bring to front",
             icon: <ArrowUpToLine size={14} />,
-            onClick: () => bringBoardItemToFront(boardId, item.id),
+            onClick: () => bringBoardItemToFront(boardId, item.id, true), // explicit — clears "keep behind"
           },
           {
             label: "Send to back",

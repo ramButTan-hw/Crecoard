@@ -367,10 +367,14 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
       return;
     }
     selectBox(box.id);
-    bringToFront(boardId, box.id);
-    broadcastOp({ op: "bringToFront", boardId, boxId: box.id });
+    // Right-click is an incidental interaction — don't lift a box that was
+    // explicitly pinned to the back (and don't broadcast a raise for it).
+    if (!box.keepBehind) {
+      bringToFront(boardId, box.id);
+      broadcastOp({ op: "bringToFront", boardId, boxId: box.id });
+    }
     setCtxMenu({ x: e.clientX, y: e.clientY });
-  }, [isFinished, canEdit, selectBox, bringToFront, boardId, box.id, broadcastOp]);
+  }, [isFinished, canEdit, selectBox, bringToFront, boardId, box.id, box.keepBehind, broadcastOp]);
 
   const handleCtxMenuClose = useCallback(() => setCtxMenu(null), []);
 
@@ -565,7 +569,7 @@ export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
       label: "Bring to front",
       icon: <ArrowUpToLine size={14} />,
       onClick: () => {
-        bringToFront(boardId, box.id);
+        bringToFront(boardId, box.id, true); // explicit — clears any "keep behind"
         broadcastOp({ op: "bringToFront", boardId, boxId: box.id });
       },
     },

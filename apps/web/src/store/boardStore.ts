@@ -886,6 +886,9 @@ export interface Box {
   width: number;
   height: number;
   zIndex: number;
+  /** Explicitly "sent to back" — stays behind and is NOT auto-raised by clicks/
+   *  right-clicks/drags. Cleared only by an explicit "Bring to front". */
+  keepBehind?: boolean;
   locked: boolean;
   perms?: BoxPerms;
   title: string;
@@ -923,6 +926,9 @@ export interface BoardLevelItem extends BlockItem {
   boardW: number;
   boardH: number;
   zIndex: number;
+  /** Explicitly "sent to back" — stays behind and is NOT auto-raised by clicks/
+   *  right-clicks/drags. Cleared only by an explicit "Bring to front". */
+  keepBehind?: boolean;
   locked?: boolean;
 }
 
@@ -1164,7 +1170,7 @@ interface BoardState {
   resizeBox: (boardId: string, boxId: string, width: number, height: number) => void;
   updateBoxStyle: (boardId: string, boxId: string, style: Partial<BoxStyle>) => void;
   updateBoxCollapsedStyle: (boardId: string, boxId: string, style: Partial<BoxStyle>) => void;
-  bringToFront: (boardId: string, boxId: string) => void;
+  bringToFront: (boardId: string, boxId: string, explicit?: boolean) => void;
   sendToBack: (boardId: string, boxId: string) => void;
   duplicateBox: (boardId: string, boxId: string) => void;
   copiedBox: Box | null;
@@ -1204,7 +1210,7 @@ interface BoardState {
   updateBoardItem: (boardId: string, itemId: string, patch: Partial<BoardLevelItem>) => void;
   moveBoardItem: (boardId: string, itemId: string, x: number, y: number) => void;
   resizeBoardItem: (boardId: string, itemId: string, w: number, h: number) => void;
-  bringBoardItemToFront: (boardId: string, itemId: string) => void;
+  bringBoardItemToFront: (boardId: string, itemId: string, explicit?: boolean) => void;
   sendBoardItemToBack: (boardId: string, itemId: string) => void;
   duplicateBoardItem: (boardId: string, itemId: string) => void;
   focusItem: (boardId: string, boxId: string, itemId: string | null) => void;
@@ -1535,7 +1541,7 @@ export const useBoardStore = create<BoardState>()(
         const board = findBoardAny(s, boardId);
         if (!board) return;
         const maxZ = board.boxes.reduce((m, b) => Math.max(m, b.zIndex), 0);
-        board.boxes.push({ ...box, id: newId, boardId, zIndex: maxZ + 1 });
+        board.boxes.push({ ...box, id: newId, boardId, zIndex: maxZ + 1, keepBehind: false });
       });
       return newId;
     },
@@ -1609,18 +1615,25 @@ export const useBoardStore = create<BoardState>()(
         });
       }),
 
-    bringToFront: (boardId, boxId) =>
+    bringToFront: (boardId, boxId, explicit = false) =>
       set((s) => {
         const board = findBoardAny(s, boardId);
         const box = board?.boxes.find((b) => b.id === boxId);
-        if (board && box) bringZToFront(board, box);
+        if (!board || !box) return;
+        // A box pinned to the back ignores incidental raises (select/right-click/
+        // drag); only an explicit "Bring to front" lifts it.
+        if (box.keepBehind && !explicit) return;
+        box.keepBehind = false;
+        bringZToFront(board, box);
       }),
 
     sendToBack: (boardId, boxId) =>
       set((s) => {
         const board = findBoardAny(s, boardId);
         const box = board?.boxes.find((b) => b.id === boxId);
-        if (board && box) sendZToBack(board, box);
+        if (!board || !box) return;
+        box.keepBehind = true;
+        sendZToBack(board, box);
       }),
 
     duplicateBox: (boardId, boxId) =>
@@ -1635,6 +1648,7 @@ export const useBoardStore = create<BoardState>()(
         clone.x = box.x + 24;
         clone.y = box.y + 24;
         clone.zIndex = maxZ + 1;
+        clone.keepBehind = false; // a fresh copy lands at the front, not pinned back
         clone.title = box.title ? box.title + " (copy)" : "";
         clone.items = clone.items.map((item) => ({ ...item, id: nanoid() }));
         board.boxes.push(clone);
@@ -1918,18 +1932,25 @@ export const useBoardStore = create<BoardState>()(
         if (item) { item.boardW = w; item.boardH = h; }
       }),
 
-    bringBoardItemToFront: (boardId, itemId) =>
+    bringBoardItemToFront: (boardId, itemId, explicit = false) =>
       set((s) => {
         const board = findBoardAny(s, boardId);
         const item = board?.boardItems?.find((i) => i.id === itemId);
-        if (board && item) bringZToFront(board, item);
+        if (!board || !item) return;
+        // A backdrop item pinned to the back ignores incidental raises (select/
+        // right-click/drag); only an explicit "Bring to front" lifts it.
+        if (item.keepBehind && !explicit) return;
+        item.keepBehind = false;
+        bringZToFront(board, item);
       }),
 
     sendBoardItemToBack: (boardId, itemId) =>
       set((s) => {
         const board = findBoardAny(s, boardId);
         const item = board?.boardItems?.find((i) => i.id === itemId);
-        if (board && item) sendZToBack(board, item);
+        if (!board || !item) return;
+        item.keepBehind = true;
+        sendZToBack(board, item);
       }),
 
     duplicateBoardItem: (boardId, itemId) =>
@@ -1944,6 +1965,7 @@ export const useBoardStore = create<BoardState>()(
         clone.boardX = item.boardX + 24;
         clone.boardY = item.boardY + 24;
         clone.zIndex = maxZ + 1;
+        clone.keepBehind = false; // a fresh copy lands at the front, not pinned back
         board.boardItems.push(clone);
         s.selectedBoardItemId = clone.id;
       }),
