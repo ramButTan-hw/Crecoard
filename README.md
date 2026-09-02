@@ -11,8 +11,12 @@
 
 > **Live:** [crecoard.com](https://crecoard.com)
 
-<!-- Add 2–3 screenshots or a short GIF here — this is the first thing a reviewer looks at. -->
-<!-- ![Board canvas](docs/screenshot-board.png) -->
+# Sample Boards and Features
+<img width="1468" height="833" alt="image" src="https://github.com/user-attachments/assets/b3beeafa-c7ea-41f1-9a17-dcefe32caa53" />
+<img width="1468" height="833" alt="image" src="https://github.com/user-attachments/assets/2c6540fe-df65-421e-bbdc-cde4bea52d9b" />
+<img width="1468" height="833" alt="image" src="https://github.com/user-attachments/assets/c9516d7c-90f4-4131-aedf-7aef00d88a3b" />
+
+
 
 ## Roadmap
 
