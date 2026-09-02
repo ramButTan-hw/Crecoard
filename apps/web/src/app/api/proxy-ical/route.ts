@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser, rateLimit, getClientIp } from "@/lib/apiAuth";
+import { safeFetch, SsrfError } from "@/lib/safeFetch";
 
 export async function GET(req: NextRequest) {
   const auth = await requireApiUser();
@@ -27,31 +28,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Only HTTPS URLs are allowed" }, { status: 400 });
   }
 
-  // Block requests to private/loopback address ranges.
-  const host = parsed.hostname.toLowerCase();
-  const blocked =
-    host === "localhost" ||
-    host.startsWith("127.") ||
-    host.startsWith("169.254.") ||
-    host.startsWith("10.") ||
-    host.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    host === "[::1]";
-
-  if (blocked) {
-    return NextResponse.json({ error: "URL resolves to a private address" }, { status: 400 });
-  }
-
   try {
-    const upstream = await fetch(parsed.toString(), {
+    // safeFetch resolves the host up front and re-validates every redirect hop
+    // against the SSRF block list (see lib/safeFetch.ts) — hostname string
+    // matching alone is bypassable via DNS (evil.example → 127.0.0.1) and via
+    // redirects (302 → http://169.254.169.254).
+    const upstream = await safeFetch(parsed, {
       headers: {
         // Some iCal servers require a recognisable User-Agent.
         "User-Agent": "Crecoard/1.0 iCal-Proxy (+https://crecoard.com)",
         "Accept": "text/calendar, text/plain;q=0.9, */*;q=0.8",
       },
-      // fetch in Node 18+ follows redirects by default (mode: "follow").
-      // The redirect option is not needed but made explicit for clarity.
-      redirect: "follow",
       // Revalidate once per minute to avoid hammering upstream servers.
       next: { revalidate: 60 },
     });
@@ -74,6 +61,9 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: unknown) {
+    if (err instanceof SsrfError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     const message = err instanceof Error ? err.message : "Fetch failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }

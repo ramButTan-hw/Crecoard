@@ -1,38 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import dns from "dns/promises";
 import { requireApiUser, rateLimit, getClientIp } from "@/lib/apiAuth";
-
-// ─── SSRF block-list ──────────────────────────────────────────────────────────
-// Reject targets that resolve to private / link-local / loopback address space.
-// IPv4 RFC-1918, link-local, loopback; IPv6 loopback and link-local.
-const PRIVATE_V4 = [
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^169\.254\./,
-  /^0\./,
-];
-
-function isPrivateIPv4(ip: string): boolean {
-  return PRIVATE_V4.some((re) => re.test(ip));
-}
-
-function isPrivateIPv6(ip: string): boolean {
-  const n = ip.toLowerCase().replace(/^\[|\]$/g, "");
-  return n === "::1" || n.startsWith("fe80:") || n.startsWith("fc") || n.startsWith("fd");
-}
-
-async function resolvesSafe(hostname: string): Promise<boolean> {
-  try {
-    const { address, family } = await dns.lookup(hostname);
-    if (family === 4) return !isPrivateIPv4(address);
-    if (family === 6) return !isPrivateIPv6(address);
-    return false;
-  } catch {
-    return false; // DNS failure → block
-  }
-}
+import { safeFetch, SsrfError } from "@/lib/safeFetch";
 
 // ─── Allowed HTTP methods ─────────────────────────────────────────────────────
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
@@ -97,19 +65,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Only HTTPS URLs are allowed" }, { status: 400 });
   }
 
-  // ── 3. SSRF: reject private / loopback destinations ──────────────────────────
-  const safe = await resolvesSafe(parsed.hostname);
-  if (!safe) {
-    return NextResponse.json({ error: "Destination not allowed" }, { status: 403 });
-  }
-
-  // ── 4. Validate method ───────────────────────────────────────────────────────
+  // ── 3. Validate method ───────────────────────────────────────────────────────
   const upperMethod = typeof method === "string" ? method.toUpperCase() : "";
   if (!ALLOWED_METHODS.has(upperMethod)) {
     return NextResponse.json({ error: "Unsupported method" }, { status: 400 });
   }
 
-  // ── 5. Build outbound headers ────────────────────────────────────────────────
+  // ── 4. Build outbound headers ────────────────────────────────────────────────
   // Only forward explicitly supplied headers — never echo Cookie, Host, etc.
   const outHeaders: Record<string, string> = {
     "User-Agent": "Crecoard-Proxy/1.0",
@@ -130,10 +92,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── 6. Execute proxied request ───────────────────────────────────────────────
+  // ── 5. Execute proxied request ───────────────────────────────────────────────
+  // safeFetch (lib/safeFetch.ts) resolves the host up front, checks EVERY DNS
+  // record against the SSRF block list, and follows redirects manually with
+  // each hop re-validated — the old single-hostname check was bypassable via
+  // redirects (302 → http://169.254.169.254) and multi-record DNS answers.
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await safeFetch(parsed, {
       method: upperMethod,
       headers: outHeaders,
       ...(upperMethod !== "GET" && upperMethod !== "DELETE" && typeof forwardBody === "string"
@@ -141,17 +107,21 @@ export async function POST(req: NextRequest) {
         : {}),
       // No caching — API widget data should always be fresh
       cache: "no-store",
-      // 10-second timeout via AbortSignal
-      signal: AbortSignal.timeout(10_000),
+    }, {
+      // 10-second budget across the whole redirect chain
+      totalTimeoutMs: 10_000,
     });
   } catch (err: unknown) {
+    if (err instanceof SsrfError) {
+      return NextResponse.json({ error: "Destination not allowed" }, { status: 403 });
+    }
     if (err instanceof Error && err.name === "TimeoutError") {
       return NextResponse.json({ error: "Request timed out" }, { status: 504 });
     }
     return NextResponse.json({ error: "Failed to reach remote" }, { status: 502 });
   }
 
-  // ── 7. Return response ───────────────────────────────────────────────────────
+  // ── 6. Return response ───────────────────────────────────────────────────────
   // Read as text first; attempt JSON parse — if it fails, wrap in { text }.
   const raw = await response.text();
   let data: unknown;
