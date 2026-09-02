@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CopyPlus, Trash2, ArrowUpToLine, ArrowDownToLine, Lock, Unlock, LockOpen, Eye, EyeOff, ShieldCheck, SlidersHorizontal,
 } from "lucide-react";
@@ -27,14 +27,17 @@ interface Props {
   isSelected: boolean;
 }
 
-export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props) {
-  const {
-    moveBoardItem, resizeBoardItem, removeBoardItem,
-    duplicateBoardItem, bringBoardItemToFront, sendBoardItemToBack,
-    updateBoardItem, selectBoardItem, focusBoardItem,
-  } = useBoardStore();
+export const BoardItemWidget = memo(function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props) {
+  const moveBoardItem = useBoardStore((s) => s.moveBoardItem);
+  const resizeBoardItem = useBoardStore((s) => s.resizeBoardItem);
+  const removeBoardItem = useBoardStore((s) => s.removeBoardItem);
+  const duplicateBoardItem = useBoardStore((s) => s.duplicateBoardItem);
+  const bringBoardItemToFront = useBoardStore((s) => s.bringBoardItemToFront);
+  const sendBoardItemToBack = useBoardStore((s) => s.sendBoardItemToBack);
+  const updateBoardItem = useBoardStore((s) => s.updateBoardItem);
+  const selectBoardItem = useBoardStore((s) => s.selectBoardItem);
+  const focusBoardItem = useBoardStore((s) => s.focusBoardItem);
   const isMobile = useIsMobile();
-  const zoom = useBoardStore((s) => s.zoom);
   const canEditBoard = useCanEditBoard();
   // Reading-surface items get a readable backdrop when the board wears a
   // wallpaper (beta feedback: content unreadable over busy art). Items with
@@ -74,6 +77,7 @@ export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props
   const beginMove = useCallback((startX: number, startY: number) => {
     if (isFinished || !canEditBoard || item.locked) return;
     isDragging.current = false;
+    const zoom = useBoardStore.getState().zoom;
     const origX = item.boardX;
     const origY = item.boardY;
     // Align to neighbors (boxes + other items) — captured once, positions are
@@ -118,7 +122,7 @@ export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFinished, canEditBoard, item.boardX, item.boardY, item.boardW, item.boardH, item.locked, item.id, boardId, zoom, moveBoardItem]);
+  }, [isFinished, canEditBoard, item.boardX, item.boardY, item.boardW, item.boardH, item.locked, item.id, boardId, moveBoardItem]);
 
   const handleDragStart = useCallback((e: React.PointerEvent) => {
     if (isFinished || !canEditBoard || item.locked) return;
@@ -134,6 +138,7 @@ export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props
         if (isFinished || !canEditBoard || item.locked) return;
         e.stopPropagation();
         e.preventDefault();
+        const zoom = useBoardStore.getState().zoom;
         const startX = e.clientX;
         const startY = e.clientY;
         const origX = item.boardX;
@@ -175,7 +180,7 @@ export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
       },
-    [isFinished, item.boardX, item.boardY, item.boardW, item.boardH, item.id, boardId, zoom, moveBoardItem, resizeBoardItem]
+    [isFinished, item.boardX, item.boardY, item.boardW, item.boardH, item.id, boardId, moveBoardItem, resizeBoardItem]
   );
 
   const handleCtxMenuClose = useCallback(() => setCtxMenu(null), []);
@@ -489,4 +494,4 @@ export function BoardItemWidget({ item, boardId, isFinished, isSelected }: Props
       )}
     </>
   );
-}
+});

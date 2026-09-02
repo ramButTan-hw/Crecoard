@@ -193,12 +193,23 @@ export function BoardCanvas() {
   const { serverId, boardId: serverBoardId, viewerRole, viewerRoleIds } = useServerBoard();
   // In server context use the server board; in personal context use the personal board
   const board = serverId ? serverBoard : personalBoard;
-  const {
-    showGrid, zoom, panOffset, selectBox, activeBoardId,
-    addBox, pasteBox, copiedBox, toggleGrid, setZoom,
-    setPanOffset, addBoardItem, selectBoardItem,
-    removeBox, duplicateBox, setExpandedBox, zoomAtCanvasCenter,
-  } = useBoardStore();
+  const showGrid = useBoardStore((s) => s.showGrid);
+  const zoom = useBoardStore((s) => s.zoom);
+  const panOffset = useBoardStore((s) => s.panOffset);
+  const activeBoardId = useBoardStore((s) => s.activeBoardId);
+  const copiedBox = useBoardStore((s) => s.copiedBox);
+  const selectBox = useBoardStore((s) => s.selectBox);
+  const addBox = useBoardStore((s) => s.addBox);
+  const pasteBox = useBoardStore((s) => s.pasteBox);
+  const toggleGrid = useBoardStore((s) => s.toggleGrid);
+  const setZoom = useBoardStore((s) => s.setZoom);
+  const setPanOffset = useBoardStore((s) => s.setPanOffset);
+  const addBoardItem = useBoardStore((s) => s.addBoardItem);
+  const selectBoardItem = useBoardStore((s) => s.selectBoardItem);
+  const removeBox = useBoardStore((s) => s.removeBox);
+  const duplicateBox = useBoardStore((s) => s.duplicateBox);
+  const setExpandedBox = useBoardStore((s) => s.setExpandedBox);
+  const zoomAtCanvasCenter = useBoardStore((s) => s.zoomAtCanvasCenter);
   const isMobile = useIsMobile();
   // Mutations target the correct board ID regardless of which namespace it lives in
   const boardId = serverBoardId ?? activeBoardId;

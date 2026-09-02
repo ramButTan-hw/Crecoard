@@ -106,7 +106,19 @@ function AppShellInner() {
   const { loadServerBoard, loadLiveBoard, publishServerBoard } = useBoardSync();
   const { openConversation } = useMessaging();
 
-  const { addItem, setDraggingBlock, activeBoardId, zoom, themeVars, appFont, appBg, persistBoards, hydrateBoards, hydrateUserTheme, setCurrentUserId, addBoardItem, injectServerBoards, setActiveBoard } = useBoardStore();
+  const addItem = useBoardStore((s) => s.addItem);
+  const setDraggingBlock = useBoardStore((s) => s.setDraggingBlock);
+  const activeBoardId = useBoardStore((s) => s.activeBoardId);
+  const themeVars = useBoardStore((s) => s.themeVars);
+  const appFont = useBoardStore((s) => s.appFont);
+  const appBg = useBoardStore((s) => s.appBg);
+  const persistBoards = useBoardStore((s) => s.persistBoards);
+  const hydrateBoards = useBoardStore((s) => s.hydrateBoards);
+  const hydrateUserTheme = useBoardStore((s) => s.hydrateUserTheme);
+  const setCurrentUserId = useBoardStore((s) => s.setCurrentUserId);
+  const addBoardItem = useBoardStore((s) => s.addBoardItem);
+  const injectServerBoards = useBoardStore((s) => s.injectServerBoards);
+  const setActiveBoard = useBoardStore((s) => s.setActiveBoard);
 
   // Cross-board chat links: if a box link targets a different personal board,
   // switch to it first, then re-fire so the canvas focuses the box.
@@ -452,8 +464,13 @@ function AppShellInner() {
   const sensors = useSensors(mouseSensor, touchSensor);
   // Block dragging is pointer-based inside BoardBox now (same as board-level
   // items) — dnd-kit only handles palette "new-item" drags, so the modifier
-  // only needs plain magnetic-grid snapping.
-  const snapToGrid = useMemo(() => createSnapToGrid(zoom, showGrid), [zoom, showGrid]);
+  // only needs plain magnetic-grid snapping. Reads zoom/showGrid lazily so the
+  // shell doesn't re-render on every canvas pan/zoom frame.
+  const snapToGrid = useMemo(() => {
+    const run: ReturnType<typeof createSnapToGrid> = (args) =>
+      createSnapToGrid(useBoardStore.getState().zoom, useBoardStore.getState().showGrid)(args);
+    return run;
+  }, []);
 
   const handleDragEnd = useCallback((e: DragEndEvent) => {
     // Block all edits in live preview and for members

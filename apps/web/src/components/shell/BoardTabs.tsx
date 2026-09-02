@@ -122,7 +122,11 @@ function SortableTab({
 // ─── BoardTabs ────────────────────────────────────────────────────────────────
 
 export function BoardTabs() {
-  const { boards, activeBoardId, setActiveBoard, addBoard, removeBoard } = useBoardStore();
+  const boards = useBoardStore((s) => s.boards);
+  const activeBoardId = useBoardStore((s) => s.activeBoardId);
+  const setActiveBoard = useBoardStore((s) => s.setActiveBoard);
+  const addBoard = useBoardStore((s) => s.addBoard);
+  const removeBoard = useBoardStore((s) => s.removeBoard);
   const reorderBoards = useBoardStore((s) => s.reorderBoards);
   const hasAppBg = useHasAppBg();
   const [isDesktop, setIsDesktop] = useState(false);
