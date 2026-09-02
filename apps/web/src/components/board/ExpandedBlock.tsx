@@ -132,8 +132,7 @@ function ItemCard({
   onToggleFocus: () => void;
   onToggleSettingsLock: () => void;
 }) {
-  const resizeExpandedItem = useBoardStore((s) => s.resizeExpandedItem);
-  const updateItem = useBoardStore((s) => s.updateItem);
+  const { resizeExpandedItem, updateItem } = useBoardStore();
   const { serverId, viewerRole, viewerRoleIds } = useServerBoard();
   const isMobile = useIsMobile();
   const [cardMenu, setCardMenu] = useState<{ x: number; y: number } | null>(null);
@@ -362,21 +361,12 @@ function ItemCard({
 // ─── Main ExpandedBlock ───────────────────────────────────────────────────────
 
 export function ExpandedBlock({ boxId }: { boxId: string }) {
-  const activeBoardId = useBoardStore((s) => s.activeBoardId);
-  const setExpandedBox = useBoardStore((s) => s.setExpandedBox);
-  const removeItem = useBoardStore((s) => s.removeItem);
-  const toggleItemInCollapsed = useBoardStore((s) => s.toggleItemInCollapsed);
-  const addItem = useBoardStore((s) => s.addItem);
-  const moveExpandedItem = useBoardStore((s) => s.moveExpandedItem);
-  const updateBox = useBoardStore((s) => s.updateBox);
-  const updateBoxStyle = useBoardStore((s) => s.updateBoxStyle);
-  const updateBoxCollapsedStyle = useBoardStore((s) => s.updateBoxCollapsedStyle);
-  const moveItemUp = useBoardStore((s) => s.moveItemUp);
-  const moveItemDown = useBoardStore((s) => s.moveItemDown);
-  const duplicateItem = useBoardStore((s) => s.duplicateItem);
-  const resetItemLayout = useBoardStore((s) => s.resetItemLayout);
-  const updateItem = useBoardStore((s) => s.updateItem);
-  const focusItem = useBoardStore((s) => s.focusItem);
+  const {
+    activeBoardId, setExpandedBox, removeItem, toggleItemInCollapsed, addItem,
+    moveExpandedItem, updateBox, updateBoxStyle, updateBoxCollapsedStyle,
+    moveItemUp, moveItemDown, duplicateItem, resetItemLayout,
+    updateItem, focusItem,
+  } = useBoardStore();
   const personalBoard = useActiveBoard();
   const serverBoard = useServerBoardData();
   const { boardId: serverBoardId, serverId } = useServerBoard();
@@ -1257,9 +1247,7 @@ function CollapsedPreviewChip({
 }
 
 function CollapsedLayoutEditor({ box, boardId, boxId }: { box: Box; boardId: string; boxId: string }) {
-  const moveCollapsedItem = useBoardStore((s) => s.moveCollapsedItem);
-  const resizeCollapsedItem = useBoardStore((s) => s.resizeCollapsedItem);
-  const toggleItemInCollapsed = useBoardStore((s) => s.toggleItemInCollapsed);
+  const { moveCollapsedItem, resizeCollapsedItem, toggleItemInCollapsed } = useBoardStore();
   const summaryItems = box.items.filter(i => i.showInCollapsed);
   const padding = box.style.padding ?? 14;
 

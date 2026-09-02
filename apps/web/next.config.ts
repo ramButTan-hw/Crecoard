@@ -9,21 +9,11 @@ const appVersion = (JSON.parse(readFileSync("./package.json", "utf8")) as { vers
 // Dev and regular web builds work normally without it.
 const isElectronBuild = process.env.ELECTRON_BUILD === "1";
 
-const securityHeaders = [
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(self), microphone=(self)" },
-  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
-];
-
 const nextConfig: NextConfig = {
   ...(isElectronBuild ? { output: "export", trailingSlash: true } : {}),
   images: { unoptimized: true },
   transpilePackages: ["@plancraft/ui", "@plancraft/db"],
   env: { NEXT_PUBLIC_APP_VERSION: appVersion },
-  ...(isElectronBuild
-    ? {}
-    : { headers: async () => [{ source: "/(.*)", headers: securityHeaders }] }),
 };
 
 export default nextConfig;

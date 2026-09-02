@@ -35,14 +35,12 @@ function Avatar({ name, color, size = 24, title }: { name: string; color: string
 }
 
 export function TopBar() {
-  const showGrid = useBoardStore((s) => s.showGrid);
-  const zoom = useBoardStore((s) => s.zoom);
-  const toggleGrid = useBoardStore((s) => s.toggleGrid);
-  const zoomAtCanvasCenter = useBoardStore((s) => s.zoomAtCanvasCenter);
-  const updateBoard = useBoardStore((s) => s.updateBoard);
-  const finishBoard = useBoardStore((s) => s.finishBoard);
-  const editBoard = useBoardStore((s) => s.editBoard);
-  const activeBoardId = useBoardStore((s) => s.activeBoardId);
+  const {
+    showGrid, zoom,
+    toggleGrid, zoomAtCanvasCenter,
+    updateBoard, finishBoard, editBoard,
+    activeBoardId,
+  } = useBoardStore();
   const hasAppBg = useHasAppBg();
   const board = useActiveBoard();
   const { members, self, isConnected } = useCollab();

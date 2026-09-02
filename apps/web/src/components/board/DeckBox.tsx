@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X, Maximize2, LayoutGrid } from "lucide-react";
 import { Box, useBoardStore } from "@/store/boardStore";
 import { useCanEditBoard } from "@/contexts/ServerBoardContext";
@@ -47,16 +47,11 @@ function SlideContent({ box, boardId }: { box: Box; boardId: string }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export const DeckBox = memo(function DeckBox({ deck, boardId }: { deck: Box; boardId: string }) {
+export function DeckBox({ deck, boardId }: { deck: Box; boardId: string }) {
   const board = useBoardStore(s => s.boards.find(b => b.id === boardId) ?? s.serverBoards[boardId]);
   const canEditBoard = useCanEditBoard();
-  const setDeckFocus = useBoardStore((s) => s.setDeckFocus);
-  const ejectSlide = useBoardStore((s) => s.ejectSlide);
-  const disbandDeck = useBoardStore((s) => s.disbandDeck);
-  const setExpandedBox = useBoardStore((s) => s.setExpandedBox);
-  const selectBox = useBoardStore((s) => s.selectBox);
-  const bringToFront = useBoardStore((s) => s.bringToFront);
-  const moveBox = useBoardStore((s) => s.moveBox);
+  const { setDeckFocus, ejectSlide, disbandDeck, setExpandedBox, selectBox, bringToFront, moveBox } = useBoardStore();
+  const zoom = useBoardStore(s => s.zoom);
 
   const [hovered, setHovered] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -165,7 +160,6 @@ export const DeckBox = memo(function DeckBox({ deck, boardId }: { deck: Box; boa
     if (e.button !== 0) return;
     if (board?.isFinished || !canEditBoard) return;
     e.stopPropagation();
-    const zoom = useBoardStore.getState().zoom;
     const slideId = deck.deckSlideIds?.[realFocus];
     const containerEl = containerRef.current;
     if (!slideId || !containerEl) return;
@@ -365,4 +359,4 @@ export const DeckBox = memo(function DeckBox({ deck, boardId }: { deck: Box; boa
       )}
     </div>
   );
-});
+}

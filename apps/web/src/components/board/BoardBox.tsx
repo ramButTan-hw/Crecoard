@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   Edit3, Copy, Trash2, Lock, Unlock,
@@ -35,16 +35,15 @@ const BLOCK_COLORS = [
 
 // ─── Collapsed item card (absolute-positioned, draggable + resizable) ──────────
 
-const CollapsedItemCard = memo(function CollapsedItemCard({
-  item, idx, boardId, boxId, boxW, padding, isFinished, canEdit,
+function CollapsedItemCard({
+  item, idx, boardId, boxId, boxW, padding, isFinished, canEdit, zoom,
 }: {
   item: BlockItem; idx: number;
   boardId: string; boxId: string;
   boxW: number; padding: number;
-  isFinished: boolean; canEdit: boolean;
+  isFinished: boolean; canEdit: boolean; zoom: number;
 }) {
-  const moveCollapsedItem = useBoardStore((s) => s.moveCollapsedItem);
-  const resizeCollapsedItem = useBoardStore((s) => s.resizeCollapsedItem);
+  const { moveCollapsedItem, resizeCollapsedItem } = useBoardStore();
   const [livePos, setLivePos] = useState<{ x: number; y: number } | null>(null);
   const [liveSize, setLiveSize] = useState<{ w: number; h: number } | null>(null);
   const colItemCleanupRef = useRef<(() => void) | null>(null);
@@ -68,7 +67,6 @@ const CollapsedItemCard = memo(function CollapsedItemCard({
     e.preventDefault();
     // Clean up any previous listener set before registering new ones
     colItemCleanupRef.current?.();
-    const zoom = useBoardStore.getState().zoom;
     const startX = e.clientX;
     const startY = e.clientY;
     const onMove = (ev: PointerEvent) => {
@@ -99,7 +97,6 @@ const CollapsedItemCard = memo(function CollapsedItemCard({
     e.preventDefault();
     // Clean up any previous listener set before registering new ones
     colItemCleanupRef.current?.();
-    const zoom = useBoardStore.getState().zoom;
     const startX = e.clientX;
     const startY = e.clientY;
     const onMove = (ev: PointerEvent) => {
@@ -159,7 +156,7 @@ const CollapsedItemCard = memo(function CollapsedItemCard({
       )}
     </div>
   );
-});
+}
 
 interface BoardBoxProps {
   box: Box;
@@ -167,22 +164,12 @@ interface BoardBoxProps {
   isDragging: boolean;
 }
 
-export const BoardBox = memo(function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
-  const selectBox = useBoardStore((s) => s.selectBox);
-  const removeBox = useBoardStore((s) => s.removeBox);
-  const updateBox = useBoardStore((s) => s.updateBox);
-  const updateBoxStyle = useBoardStore((s) => s.updateBoxStyle);
-  const resizeBox = useBoardStore((s) => s.resizeBox);
-  const moveBox = useBoardStore((s) => s.moveBox);
-  const bringToFront = useBoardStore((s) => s.bringToFront);
-  const sendToBack = useBoardStore((s) => s.sendToBack);
-  const duplicateBox = useBoardStore((s) => s.duplicateBox);
-  const copyBox = useBoardStore((s) => s.copyBox);
-  const pasteBox = useBoardStore((s) => s.pasteBox);
-  const copiedBox = useBoardStore((s) => s.copiedBox);
-  const setExpandedBox = useBoardStore((s) => s.setExpandedBox);
-  const setResizeState = useBoardStore((s) => s.setResizeState);
-  const replaceBoxItems = useBoardStore((s) => s.replaceBoxItems);
+export function BoardBox({ box, boardId, isDragging }: BoardBoxProps) {
+  const {
+    selectBox, removeBox, updateBox, updateBoxStyle, resizeBox, moveBox, bringToFront, sendToBack,
+    duplicateBox, copyBox, pasteBox, copiedBox, setExpandedBox, setResizeState, replaceBoxItems,
+  } = useBoardStore();
+  const zoom = useBoardStore(s => s.zoom);
   const isFinished = useBoardStore(s =>
     (s.boards.find(b => b.id === boardId) ?? s.serverBoards[boardId])?.isFinished ?? false
   );
@@ -215,7 +202,6 @@ export const BoardBox = memo(function BoardBox({ box, boardId, isDragging }: Boa
 
   const beginMove = useCallback((startX: number, startY: number) => {
     dragCleanupRef.current?.();
-    const zoom = useBoardStore.getState().zoom;
     const origX = box.x;
     const origY = box.y;
     // Align to neighbors (boxes + board items) — captured once, positions are
@@ -277,7 +263,7 @@ export const BoardBox = memo(function BoardBox({ box, boardId, isDragging }: Boa
     dragCleanupRef.current = cleanup;
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-  }, [boardId, box.id, box.x, box.y, box.width, box.height, box.deckOwnerId, moveBox, broadcastOp]);
+  }, [boardId, box.id, box.x, box.y, box.width, box.height, box.deckOwnerId, zoom, moveBox, broadcastOp]);
 
   const handleBoxPointerDown = useCallback((e: React.PointerEvent) => {
     // Same interaction grammar as board-level items: interactive elements and
@@ -327,7 +313,6 @@ export const BoardBox = memo(function BoardBox({ box, boardId, isDragging }: Boa
         if (box.locked || isFinished) return;
         e.stopPropagation(); e.preventDefault();
         resizing.current = true;
-        const zoom = useBoardStore.getState().zoom;
         resizeOrigin.current = { mx: e.clientX, my: e.clientY, x: box.x, y: box.y, w: box.width, h: box.height };
         const snapEnabled = useBoardStore.getState().showGrid;
         const snap = (v: number) => magnetize(v, snapEnabled);
@@ -368,7 +353,7 @@ export const BoardBox = memo(function BoardBox({ box, boardId, isDragging }: Boa
         window.addEventListener("mousemove", onMove);
         window.addEventListener("mouseup", onUp);
       },
-    [boardId, box.id, box.x, box.y, box.width, box.height, box.locked, isFinished, moveBox, resizeBox, setResizeState, broadcastOp]
+    [boardId, box.id, box.x, box.y, box.width, box.height, box.locked, isFinished, zoom, moveBox, resizeBox, setResizeState, broadcastOp]
   );
 
   // ─── Context menu handler ────────────────────────────────────────────────────
@@ -831,6 +816,7 @@ export const BoardBox = memo(function BoardBox({ box, boardId, isDragging }: Boa
                     padding={s.padding}
                     isFinished={isFinished}
                     canEdit={canEdit}
+                    zoom={zoom}
                   />
                 ))}
                 {box.items.length > summaryItems.length && (
@@ -912,4 +898,4 @@ export const BoardBox = memo(function BoardBox({ box, boardId, isDragging }: Boa
       )}
     </>
   );
-});
+}

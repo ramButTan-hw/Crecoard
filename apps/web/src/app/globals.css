@@ -16,7 +16,7 @@
   --text-muted: #6d6f75;
   --grid-color: rgba(255, 255, 255, 0.08);
   --grid-accent-color: rgba(255, 255, 255, 0.18);
-  --app-font: var(--font-inter), system-ui, sans-serif;
+  --app-font: "Inter", system-ui, sans-serif;
 }
 
 * {
