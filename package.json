@@ -10,7 +10,8 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "type-check": "turbo run type-check"
+    "type-check": "turbo run type-check",
+    "setup": "node scripts/setup.mjs"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

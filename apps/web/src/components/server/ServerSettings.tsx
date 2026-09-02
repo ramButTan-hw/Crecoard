@@ -188,6 +188,9 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
   const canViewPublishHistory = myRole === "owner" || myRole === "admin" || (defaultRolePerms?.canViewPublishHistory ?? false);
   const canRollbackAction     = myRole === "owner" || myRole === "admin" || (defaultRolePerms?.canRollback ?? false);
   const canManageBackupsAction = myRole === "owner" || myRole === "admin" || (defaultRolePerms?.canManageBackups ?? false);
+  // A webhook token is a write credential for the board, so only moderators
+  // may see or manage them (enforced by RLS as of 20260901000000).
+  const canManageWebhooks = myRole === "owner" || myRole === "admin";
 
   // Appearance helpers
   const boardVars: ThemeVarMap = currentBoard?.boardThemeVars ?? themeVars;
@@ -283,7 +286,7 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
     { id: "members",    label: "Members" },
     { id: "audit",      label: "Publish History", icon: <Activity size={13} /> },
     { id: "backups",    label: "Backups", icon: <Archive size={13} /> },
-    { id: "webhooks",   label: "Webhooks", icon: <Zap size={13} /> },
+    ...(canManageWebhooks ? [{ id: "webhooks" as Tab, label: "Webhooks", icon: <Zap size={13} /> }] : []),
     { id: "bots",       label: "Bots", icon: <Bot size={13} /> },
   ];
 
@@ -999,7 +1002,9 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
 
           {/* ── Webhooks ──────────────────────────────────────────────────── */}
           {activeTab === "webhooks" && (
-            <WebhooksTab boardId={boardId} serverId={serverId} isReal={isReal} />
+            canManageWebhooks
+              ? <WebhooksTab boardId={boardId} serverId={serverId} isReal={isReal} />
+              : <p className="text-sm text-[var(--text-muted)]">You don&apos;t have permission to manage webhooks.</p>
           )}
 
           {/* ── Bots ──────────────────────────────────────────────────────── */}
@@ -1434,6 +1439,7 @@ function WebhooksTab({ boardId, serverId, isReal }: { boardId: string | null; se
   const token = currentBoard?.webhookToken;
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
   const webhookUrl = token ? `${baseUrl}/api/webhooks/${token}` : null;
@@ -1445,19 +1451,31 @@ function WebhooksTab({ boardId, serverId, isReal }: { boardId: string | null; se
   async function handleGenerate() {
     if (!boardId) return;
     setSaving(true);
+    setError(null);
     const newToken = crypto.randomUUID().replace(/-/g, "");
-    // Persist to Supabase so the API route can look it up
+    // Persist to Supabase so the API route can look it up. Abort on failure —
+    // otherwise the local board would advertise a token the DB doesn't accept.
     if (supabaseConfigured) {
       const { supabase } = await import("@/lib/supabase");
       if (token) {
-        await supabase.from("webhook_tokens").delete().eq("token", token);
+        const { error: revokeErr } = await supabase.from("webhook_tokens").delete().eq("token", token);
+        if (revokeErr) {
+          setSaving(false);
+          setError(`Couldn't revoke the old token: ${revokeErr.message}`);
+          return;
+        }
       }
-      await supabase.from("webhook_tokens").insert({
+      const { error: insertErr } = await supabase.from("webhook_tokens").insert({
         token: newToken,
         board_id: boardId,
         server_id: serverId,
         label: "Default",
       });
+      if (insertErr) {
+        setSaving(false);
+        setError(`Couldn't save the new token: ${insertErr.message}`);
+        return;
+      }
     }
     setWebhookToken(boardId, newToken);
     setSaving(false);
@@ -1465,9 +1483,14 @@ function WebhooksTab({ boardId, serverId, isReal }: { boardId: string | null; se
 
   async function handleRevoke() {
     if (!boardId || !token) return;
+    setError(null);
     if (supabaseConfigured) {
       const { supabase } = await import("@/lib/supabase");
-      await supabase.from("webhook_tokens").delete().eq("token", token);
+      const { error: revokeErr } = await supabase.from("webhook_tokens").delete().eq("token", token);
+      if (revokeErr) {
+        setError(`Couldn't revoke the token: ${revokeErr.message}`);
+        return;
+      }
     }
     setWebhookToken(boardId, undefined);
   }
@@ -1554,6 +1577,11 @@ function WebhooksTab({ boardId, serverId, isReal }: { boardId: string | null; se
               <Zap size={14} />
               {saving ? "Generating…" : "Generate webhook URL"}
             </button>
+          )}
+          {error && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              {error}
+            </div>
           )}
         </div>
       </div>

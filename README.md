@@ -41,20 +41,26 @@
 
 ## Running locally
 
-Requires **Node 20+** and a free [Supabase](https://supabase.com) project.
+Requires **Node 20+**. The easiest path runs Supabase locally in Docker; a free hosted project works too.
+
+### Option A — local Supabase (recommended)
+
+Requires [Docker](https://www.docker.com/).
 
 ```bash
 npm install
-
-# Configure the web app
-cp apps/web/.env.example apps/web/.env.local
-# → fill in your Supabase URL + anon key (and any optional service keys)
-
-# Apply the database schema to your Supabase project
-# (run the files in supabase/migrations/ in order via the Supabase SQL editor)
-
-npm run dev        # starts the web app via Turborepo
+npx supabase start   # boots local Supabase + applies supabase/migrations/
+npm run setup        # writes apps/web/.env.local from the running stack
+npm run dev          # http://localhost:3000
 ```
+
+A confirmed test account is seeded (see `supabase/seed.sql`): `test@crecoard.local` / `password123`. Re-apply the schema from scratch any time with `npx supabase db reset`.
+
+### Option B — hosted Supabase
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. Apply the schema: run each file in `supabase/migrations/` **in order** in the SQL editor (or `supabase db push` if you link the project).
+3. `cp apps/web/.env.example apps/web/.env.local`, then paste your Project URL + anon key (Settings → API) into the two `NEXT_PUBLIC_SUPABASE_*` vars.
 
 Other scripts: `npm run build`, `npm run lint`, `npm run type-check`.
 
