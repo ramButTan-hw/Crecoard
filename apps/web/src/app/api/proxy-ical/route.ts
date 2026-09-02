@@ -29,10 +29,6 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // safeFetch resolves the host up front and re-validates every redirect hop
-    // against the SSRF block list (see lib/safeFetch.ts) — hostname string
-    // matching alone is bypassable via DNS (evil.example → 127.0.0.1) and via
-    // redirects (302 → http://169.254.169.254).
     const upstream = await safeFetch(parsed, {
       headers: {
         // Some iCal servers require a recognisable User-Agent.

@@ -2,20 +2,7 @@ import dns from "dns/promises";
 import { isIP } from "net";
 
 // ─── SSRF protection for outbound proxy routes ────────────────────────────────
-// Shared by /api/proxy and /api/proxy-ical. Every URL is DNS-resolved and
-// every resolved address is checked against private/loopback/link-local ranges
-// BEFORE any connection is made, and redirects are followed manually with each
-// hop re-validated. This blocks:
-//   • hostnames whose DNS resolves to internal IPs (string-matching the
-//     hostname alone does not — "evil.example" can point at 127.0.0.1)
-//   • redirect chains that hop to internal hosts (302 → 169.254.169.254)
-//   • http downgrades mid-chain
-//   • leaking Authorization to a different origin via redirect
-//
-// Residual risk (documented): a DNS-rebinding domain could answer the
-// validation lookup with a public IP and the fetch's lookup with a private
-// one. Closing that fully requires socket-level address pinning; the attack
-// is substantially harder than the redirect/DNS bypasses above.
+
 
 export class SsrfError extends Error {}
 
@@ -112,10 +99,6 @@ export function isBlockedAddress(address: string): boolean {
 
 // ─── URL validation ───────────────────────────────────────────────────────────
 
-/**
- * Throws SsrfError unless `target` is HTTPS and resolves ONLY to public
- * addresses. Checks every record returned by DNS, not just the first.
- */
 export async function assertSafeUrl(target: URL): Promise<void> {
   if (target.protocol !== "https:") {
     throw new SsrfError("Only HTTPS URLs are allowed");
@@ -147,12 +130,7 @@ export async function assertSafeUrl(target: URL): Promise<void> {
 
 // ─── Fetch with validated redirect hops ───────────────────────────────────────
 
-/**
- * fetch() replacement for untrusted URLs: validates the destination up front,
- * follows redirects manually (re-validating every hop), refuses http
- * downgrades, strips forwarded credentials when a redirect changes origin, and
- * mirrors standard fetch semantics for method rewriting (301/302/303 → GET).
- */
+
 export async function safeFetch(
   input: string | URL,
   init: RequestInit = {},

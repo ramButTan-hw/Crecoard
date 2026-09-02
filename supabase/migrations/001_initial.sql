@@ -1,1 +1,0 @@
--- Superseded by 20260627000000_profiles.sql and later migrations. No-op.

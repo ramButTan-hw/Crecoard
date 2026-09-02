@@ -93,10 +93,6 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 5. Execute proxied request ───────────────────────────────────────────────
-  // safeFetch (lib/safeFetch.ts) resolves the host up front, checks EVERY DNS
-  // record against the SSRF block list, and follows redirects manually with
-  // each hop re-validated — the old single-hostname check was bypassable via
-  // redirects (302 → http://169.254.169.254) and multi-record DNS answers.
   let response: Response;
   try {
     response = await safeFetch(parsed, {

@@ -59,7 +59,7 @@ A confirmed test account is seeded (see `supabase/seed.sql`): `test@crecoard.loc
 ### Option B — hosted Supabase
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. Apply the schema: run each file in `supabase/migrations/` **in order** in the SQL editor (or `supabase db push` if you link the project).
+2. Apply the schema: run the single file `supabase/migrations/20260903000000_baseline.sql` in the SQL editor (or `supabase db push` if you link the project).
 3. `cp apps/web/.env.example apps/web/.env.local`, then paste your Project URL + anon key (Settings → API) into the two `NEXT_PUBLIC_SUPABASE_*` vars.
 
 Other scripts: `npm run build`, `npm run lint`, `npm run type-check`.
