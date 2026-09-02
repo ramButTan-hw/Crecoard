@@ -16,12 +16,11 @@
 
 ## Roadmap
 
-- [ ] Clean up UI
-- [ ] Notification enhancements
-- [ ] Port over to MacOS
-- [ ] Correctly and fully implement community item implementations
+- [ ] Notifications 
+- [ ] Fully implement community item implementations
 - [ ] Mobile app
 - [ ] Widget collections
+- [ ] MacOS suport
 
 
 ## Tech stack
